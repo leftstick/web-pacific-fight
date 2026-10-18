@@ -328,6 +328,10 @@
       /* 受击无敌（闪避成功）：无伤害、无打断 */
       if (result.dodged) { this.anim('run', { fade: 0.08 }); return; }
 
+      /* 受击闪白（仅视觉，不改判定） */
+      var HF = (CONFIG.artConfig && CONFIG.artConfig.hitFlash) || {};
+      this._flashT = Math.max(this._flashT || 0, HF.duration || 0.18);
+
       /* 难度防御系数修正（文档化实现）：
        *   Combat.applyHit 已按 def.defense 结算并扣除 HP；此处按 defenseScale 追加
        *   难度修正（>1 更耐打、<1 更脆），通过回补/补扣 HP 实现，绝不修改冻结的 def。
@@ -555,6 +559,7 @@
       if (this.dead) {
         this._integratePhysics(dt, arena);
         this._syncRoot();
+        this._updateMaterials(dt);
         if (this.mixer) this.mixer.update(dt);
         return;
       }
@@ -563,6 +568,7 @@
       if (this.frozen > 0) {
         this._integratePhysics(dt, arena, true);
         this._syncRoot();
+        this._updateMaterials(dt);
         if (this.mixer) this.mixer.update(dt);
         return;
       }
@@ -624,6 +630,7 @@
       this._resolveSeparation(opponent);
       this._face(opponent);
       this._syncRoot();
+      this._updateMaterials(dt);
 
       /* 动画 */
       this._updateAnim();
@@ -1043,6 +1050,22 @@
         this.root.position.set(this.position.x, this.position.y, this.position.z);
       }
       this.root.rotation.y = MODEL_FORWARD_Y - this.yaw;
+    },
+
+    /* 材质反馈：受击闪白逐帧衰减；发光材质呼吸脉动 */
+    _updateMaterials: function (dt) {
+      var mdl = this.model;
+      if (!mdl) return;
+      var HF = (CONFIG.artConfig && CONFIG.artConfig.hitFlash) || {};
+      if (this._flashT > 0) this._flashT = Math.max(0, this._flashT - dt * (HF.decay || 5.5));
+      var k = this._flashT > 0 ? this._flashT / (HF.duration || 0.18) : 0;
+      if (mdl.bodyMaterials && GAME.Models && GAME.Models.flashBody) {
+        GAME.Models.flashBody(mdl.bodyMaterials, U.clamp(k, 0, 1));
+      }
+      if (mdl.glowMaterials && GAME.Models && GAME.Models.pulseGlow) {
+        this._matT = (this._matT || 0) + dt;
+        GAME.Models.pulseGlow(mdl.glowMaterials, this._matT);
+      }
     },
 
     /* ---------------------------------------------------------------------------

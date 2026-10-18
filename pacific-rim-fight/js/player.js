@@ -722,7 +722,26 @@
       this.root.position.set(this.position.x + backX, this.position.y + bobY, this.position.z);
       this.root.rotation.y = MODEL_YAW_OFFSET - this.yaw;          // 模型正面 +Z → 对齐 yaw
     }
+    /* 材质：受击闪白衰减 + 发光呼吸 */
+    this._updateMaterials(dt);
     if (this.mixer) this.mixer.update(dt);
+  };
+
+  /* 材质反馈：受击闪白逐帧衰减；发光材质呼吸脉动 */
+  Player.prototype._updateMaterials = function (dt) {
+    var mdl = this.model;
+    if (!mdl) return;
+    var HF = (CONFIG.artConfig && CONFIG.artConfig.hitFlash) || {};
+    if (this._flashT > 0) {
+      this._flashT = Math.max(0, this._flashT - dt * (HF.decay || 5.5));
+    }
+    var k = this._flashT > 0 ? this._flashT / (HF.duration || 0.18) : 0;
+    if (mdl.bodyMaterials && GAME.Models && GAME.Models.flashBody) {
+      GAME.Models.flashBody(mdl.bodyMaterials, U.clamp(k, 0, 1));
+    }
+    if (mdl.glowMaterials && GAME.Models && GAME.Models.pulseGlow) {
+      GAME.Models.pulseGlow(mdl.glowMaterials, (this._elapsed = (this._elapsed || 0) + dt));
+    }
   };
 
   /* ===========================================================================
@@ -816,6 +835,10 @@
    * ======================================================================== */
   Player.prototype.takeHit = function (result) {
     if (!result || this.dead) return;
+
+    /* 受击闪白（仅视觉，不改判定） */
+    var HF = (CONFIG.artConfig && CONFIG.artConfig.hitFlash) || {};
+    this._flashT = Math.max(this._flashT || 0, HF.duration || 0.18);
 
     var duringUlt = (this.state === 'ultimate');
 

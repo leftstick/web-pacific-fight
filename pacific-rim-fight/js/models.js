@@ -17,6 +17,7 @@
   var CONFIG = GAME.CONFIG;
   var ART = CONFIG.art;
   var PAL = ART.palette;
+  var AC = CONFIG.artConfig || {};        // ART_CONFIG 统一视觉参数入口
   var THREE = null;          // 由 init() 注入，禁止在脚本装载时使用
 
   var Models = {
@@ -64,21 +65,37 @@
       if (CONFIG.models.enableGLTF && url) {
         return Models.loadGLTF(url).then(function (gltf) {
           var root = gltf.scene || gltf.scenes[0];
+          var glowMaterials = [];
           root.traverse(function (o) {
-            if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; }
+            if (o.isMesh) {
+              o.castShadow = true; o.receiveShadow = true;
+              var mats = Array.isArray(o.material) ? o.material : [o.material];
+              for (var i = 0; i < mats.length; i++) {
+                var mt = mats[i];
+                if (mt && mt.emissive && mt.emissive.getHex && mt.emissive.getHex() !== 0) {
+                  mt.userData.baseEmissiveIntensity = mt.emissiveIntensity;
+                  mt.userData.isGlow = true;
+                  if (glowMaterials.indexOf(mt) < 0) glowMaterials.push(mt);
+                } else if (mt) {
+                  mt.userData.baseEmissive = mt.emissive ? mt.emissive.clone() : new THREE.Color(0x000000);
+                  mt.userData.baseEmissiveIntensity = mt.emissiveIntensity || 0;
+                }
+              }
+            }
           });
           var s = (def.model.scale || 1);
           root.scale.multiplyScalar(s);
           if (def.model.rotationY) root.rotation.y += def.model.rotationY;
-          return { root: root, clips: (gltf.animations || []), gltf: gltf, isPlaceholder: false, mixerTarget: root };
+          var bodyMaterials = Models.collectBodyMaterials(root);
+          return { root: root, clips: (gltf.animations || []), gltf: gltf, isPlaceholder: false, mixerTarget: root, glowMaterials: glowMaterials, bodyMaterials: bodyMaterials };
         }).catch(function (e) {
           console.warn('[Models] 高清模型加载失败，回退程序化低模：', def.id, e && e.message);
           var built = Models.build(def);
-          return { root: built.root, clips: built.clips, gltf: null, isPlaceholder: true, mixerTarget: built.root, parts: built.parts, glowMaterials: built.glowMaterials, hitCenterY: built.hitCenterY };
+          return { root: built.root, clips: built.clips, gltf: null, isPlaceholder: true, mixerTarget: built.root, parts: built.parts, glowMaterials: built.glowMaterials, bodyMaterials: built.bodyMaterials, hitCenterY: built.hitCenterY };
         });
       }
       var b = Models.build(def);
-      return Promise.resolve({ root: b.root, clips: b.clips, gltf: null, isPlaceholder: true, mixerTarget: b.root, parts: b.parts, glowMaterials: b.glowMaterials, hitCenterY: b.hitCenterY });
+      return Promise.resolve({ root: b.root, clips: b.clips, gltf: null, isPlaceholder: true, mixerTarget: b.root, parts: b.parts, glowMaterials: b.glowMaterials, bodyMaterials: b.bodyMaterials, hitCenterY: b.hitCenterY });
     },
 
     build: function (def) {
@@ -88,14 +105,15 @@
     /* ================================================================== */
     /* 通用建模辅助                                                        */
     /* ================================================================== */
-    /* 通用 PBR 材质：金属度/粗糙度默认值已下调，配合 IBL 环境贴图避免金属全黑；
+    /* 通用 PBR 材质：默认金属度/粗糙度来自 ART_CONFIG.material，
        opts.maps 可传入 { map, roughnessMap, bumpMap, normalMap } 叠加表面细节。 */
     _mat: function (color, opts) {
       opts = opts || {};
+      var def = AC.material || {};
       var m = new THREE.MeshStandardMaterial({
         color: color,
-        metalness: opts.metalness !== undefined ? opts.metalness : 0.55,
-        roughness: opts.roughness !== undefined ? opts.roughness : 0.5,
+        metalness: opts.metalness !== undefined ? opts.metalness : (def.defaultMetalness !== undefined ? def.defaultMetalness : 0.55),
+        roughness: opts.roughness !== undefined ? opts.roughness : (def.defaultRoughness !== undefined ? def.defaultRoughness : 0.5),
         emissive: opts.emissive !== undefined ? opts.emissive : 0x000000,
         emissiveIntensity: opts.emissiveIntensity || 1,
         flatShading: !!opts.flat
@@ -105,16 +123,71 @@
         if (opts.maps.roughnessMap) m.roughnessMap = opts.maps.roughnessMap;
         if (opts.maps.bumpMap) m.bumpMap = opts.maps.bumpMap;
         if (opts.maps.normalMap) m.normalMap = opts.maps.normalMap;
+        if (opts.maps.emissiveMap) m.emissiveMap = opts.maps.emissiveMap;
       }
       if (opts.bumpScale !== undefined) m.bumpScale = opts.bumpScale;
       if (opts.envMapIntensity !== undefined) m.envMapIntensity = opts.envMapIntensity;
+      m.userData.baseEmissive = m.emissive ? m.emissive.clone() : new THREE.Color(0x000000);
+      m.userData.baseEmissiveIntensity = m.emissiveIntensity;
       return m;
     },
     _glowMat: function (color, intensity) {
-      return new THREE.MeshStandardMaterial({
+      var m = new THREE.MeshStandardMaterial({
         color: color, metalness: 0.2, roughness: 0.3,
         emissive: color, emissiveIntensity: intensity === undefined ? 2.2 : intensity
       });
+      m.userData.baseEmissiveIntensity = m.emissiveIntensity;
+      m.userData.isGlow = true;
+      return m;
+    },
+    /* 收集单位本体材质（非发光、可用于受击闪白 / 全局染色），同时记录发光材质呼吸 */
+    collectBodyMaterials: function (root) {
+      var list = [];
+      if (!root) return list;
+      root.traverse(function (o) {
+        if (!o.isMesh) return;
+        var mats = Array.isArray(o.material) ? o.material : [o.material];
+        for (var i = 0; i < mats.length; i++) {
+          var mt = mats[i];
+          if (!mt) continue;
+          if (mt.userData && mt.userData.isGlow) continue;
+          if (list.indexOf(mt) < 0) list.push(mt);
+        }
+      });
+      return list;
+    },
+    /* 受击闪白：把本体材质 emissive 临时置白，强度随 flash 衰减
+       flash ∈ [0,1]，1=峰值。调用方在 update 里逐帧衰减后再次调用。 */
+    flashBody: function (bodyMaterials, flash) {
+      if (!bodyMaterials || !bodyMaterials.length) return;
+      var col = (AC.hitFlash && AC.hitFlash.color !== undefined) ? AC.hitFlash.color : 0xffffff;
+      var peak = (AC.glow && AC.glow.hitFlashIntensity) || 2.4;
+      for (var i = 0; i < bodyMaterials.length; i++) {
+        var m = bodyMaterials[i];
+        if (!m || !m.emissive) continue;
+        var base = m.userData && m.userData.baseEmissive ? m.userData.baseEmissive : null;
+        var baseI = m.userData && m.userData.baseEmissiveIntensity !== undefined ? m.userData.baseEmissiveIntensity : 0;
+        if (flash > 0.001) {
+          m.emissive.setHex(col);
+          m.emissiveIntensity = Math.max(baseI, peak * flash);
+        } else {
+          if (base) m.emissive.copy(base); else m.emissive.setHex(0x000000);
+          m.emissiveIntensity = baseI;
+        }
+      }
+    },
+    /* 发光呼吸：按时间 t(秒) 微调所有发光材质强度，制造反应堆脉动 */
+    pulseGlow: function (glowMaterials, t) {
+      if (!glowMaterials || !glowMaterials.length) return;
+      var sp = (AC.glow && AC.glow.pulseSpeed) || 1.6;
+      var dp = (AC.glow && AC.glow.pulseDepth) || 0.18;
+      var k = 1 + Math.sin(t * sp * Math.PI * 2) * dp;
+      for (var i = 0; i < glowMaterials.length; i++) {
+        var m = glowMaterials[i];
+        if (!m) continue;
+        var base = m.userData && m.userData.baseEmissiveIntensity !== undefined ? m.userData.baseEmissiveIntensity : m.emissiveIntensity;
+        m.emissiveIntensity = base * k;
+      }
     },
     /* 零件：带名字的 Group，便于 AnimationClip 定位 */
     _part: function (name, parent, x, y, z) {
@@ -177,11 +250,15 @@
       var heavy = style === 'heavy';
       var w = heavy ? 1.28 : 1.0;                 // 体格宽度系数
       var tex = unitTextures('mecha');
-      var armor = Models._mat(def.armor, { metalness: 0.62, roughness: 0.5, maps: tex, bumpScale: 0.02, envMapIntensity: 1.0 });
-      var accent = Models._mat(def.accent, { metalness: 0.72, roughness: 0.42, maps: tex, envMapIntensity: 1.0 });
-      var dark = Models._mat(0x10151a, { metalness: 0.5, roughness: 0.66, envMapIntensity: 0.8 });
-      var glow = Models._glowMat(def.glow, 1.15);
-      var glowWarm = Models._glowMat(0xffd9a0, 0.85);
+      var MDEF = (AC.material || {});
+      var mm = MDEF.mecha || { metalness: 0.62, roughness: 0.5, envMapIntensity: 1.0 };
+      var ma = MDEF.accent || { metalness: 0.72, roughness: 0.42, envMapIntensity: 1.0 };
+      var md = MDEF.dark || { metalness: 0.5, roughness: 0.66, envMapIntensity: 0.8 };
+      var armor = Models._mat(def.armor, { metalness: mm.metalness, roughness: mm.roughness, maps: tex, bumpScale: 0.02, envMapIntensity: mm.envMapIntensity });
+      var accent = Models._mat(def.accent, { metalness: ma.metalness, roughness: ma.roughness, maps: tex, envMapIntensity: ma.envMapIntensity });
+      var dark = Models._mat(0x10151a, { metalness: md.metalness, roughness: md.roughness, envMapIntensity: md.envMapIntensity });
+      var glow = Models._glowMat(def.glow, (AC.glow && AC.glow.mechaCore) || 1.15);
+      var glowWarm = Models._glowMat(0xffd9a0, (AC.glow && AC.glow.mechaWarm) || 0.85);
       var glowMaterials = [glow, glowWarm];
 
       var root = new THREE.Group();
@@ -283,9 +360,11 @@
       });
 
       root.userData.height = H;
+      var bodyMaterials = Models.collectBodyMaterials(root);
       return {
         root: root, parts: parts, clips: Models.createClips(root, 'mecha', def),
-        height: H, radius: def.radius, hitCenterY: H * 0.55, glowMaterials: glowMaterials
+        height: H, radius: def.radius, hitCenterY: H * 0.55,
+        glowMaterials: glowMaterials, bodyMaterials: bodyMaterials
       };
     },
 
@@ -297,11 +376,15 @@
       var fast = def.style === 'fast';
       var bulk = fast ? 0.92 : 1.22;
       var tex = unitTextures('kaiju');
-      var skin = Models._mat(def.skin, { metalness: 0.05, roughness: 0.9, flat: true, maps: tex, bumpScale: 0.035 });
-      var belly = Models._mat(def.belly, { metalness: 0.05, roughness: 0.85, flat: true, maps: tex, bumpScale: 0.025 });
-      var plate = Models._mat(0x2b3238, { metalness: 0.35, roughness: 0.8, flat: true, maps: tex, bumpScale: 0.03 });
-      var glow = Models._glowMat(def.glow, 0.95);
-      var glowSoft = Models._glowMat(def.glow, 0.6);
+      var KDEF = (AC.material || {});
+      var ks = KDEF.kaijuSkin || { metalness: 0.05, roughness: 0.9 };
+      var kb = KDEF.kaijuBelly || { metalness: 0.05, roughness: 0.85 };
+      var kp = KDEF.kaijuPlate || { metalness: 0.35, roughness: 0.8 };
+      var skin = Models._mat(def.skin, { metalness: ks.metalness, roughness: ks.roughness, flat: true, maps: tex, bumpScale: 0.035 });
+      var belly = Models._mat(def.belly, { metalness: kb.metalness, roughness: kb.roughness, flat: true, maps: tex, bumpScale: 0.025 });
+      var plate = Models._mat(0x2b3238, { metalness: kp.metalness, roughness: kp.roughness, flat: true, maps: tex, bumpScale: 0.03 });
+      var glow = Models._glowMat(def.glow, (AC.glow && AC.glow.kaijuCore) || 0.95);
+      var glowSoft = Models._glowMat(def.glow, (AC.glow && AC.glow.kaijuSoft) || 0.6);
       var glowMaterials = [glow, glowSoft];
 
       var root = new THREE.Group();
@@ -398,9 +481,11 @@
       Models._box(tailTip, H * 0.055, H * 0.055, tailLen * 0.7, skin, 0, 0, -tailLen * 0.35);
 
       root.userData.height = H;
+      var bodyMaterials = Models.collectBodyMaterials(root);
       return {
         root: root, parts: parts, clips: Models.createClips(root, 'kaiju', def),
-        height: H, radius: def.radius, hitCenterY: H * 0.55, glowMaterials: glowMaterials
+        height: H, radius: def.radius, hitCenterY: H * 0.55,
+        glowMaterials: glowMaterials, bodyMaterials: bodyMaterials
       };
     },
 
@@ -932,6 +1017,49 @@
     return set;
   }
 
+  /* 生成带窗户灯光的楼宇贴图：返回 { map, emissive }
+   *   map      —— 墙体基色 + 窗户（亮窗=灯光色，暗窗=深色）
+   *   emissive —— 仅亮窗区域发光，用于自发光贴图，让近景楼宇夜晚亮灯 */
+  function makeWindowTexture(baseColor) {
+    var B = AC.building || {};
+    var size = B.windowTexSize || 128;
+    var cell = 8;
+    var litChance = B.windowLitChance !== undefined ? B.windowLitChance : 0.42;
+    var warmRatio = B.windowWarmRatio !== undefined ? B.windowWarmRatio : 0.70;
+
+    var mc = makeCanvas(size, size * 2), mg = mc.getContext('2d');
+    mg.fillStyle = baseColor; mg.fillRect(0, 0, size, size * 2);
+
+    var ec = makeCanvas(size, size * 2), eg = ec.getContext('2d');
+    eg.fillStyle = '#000000'; eg.fillRect(0, 0, size, size * 2);
+
+    for (var y = 0; y < size * 2; y += cell) {
+      for (var x = 0; x < size; x += cell) {
+        var r = Math.random();
+        if (r < litChance) {
+          var warm = Math.random() < warmRatio;
+          var col = warm ? hex(PAL.windowWarm) : hex(PAL.windowCold);
+          var a = U.rand(0.35, 1);
+          mg.fillStyle = col; mg.globalAlpha = a;
+          mg.fillRect(x + 2, y + 2, 4, 4);
+          mg.globalAlpha = 1;
+          eg.fillStyle = col; eg.globalAlpha = a;
+          eg.fillRect(x + 2, y + 2, 4, 4);
+          eg.globalAlpha = 1;
+        } else if (r < litChance + 0.1) {
+          mg.fillStyle = '#0d1114'; mg.fillRect(x + 2, y + 2, 4, 4);
+        }
+      }
+    }
+    /* 纵向混凝土分隔带 */
+    mg.fillStyle = 'rgba(0,0,0,0.25)';
+    eg.fillStyle = 'rgba(0,0,0,1)';
+    for (var by = cell; by < size * 2; by += cell * 4) {
+      mg.fillRect(0, by, size, 1); eg.fillRect(0, by, size, 1);
+    }
+    return { map: canvasTexture(mc), emissive: canvasTexture(ec) };
+  }
+
   function cityTextures() {
     var tex = {};
     /* 远景楼宇窗光贴图 */
@@ -964,6 +1092,9 @@
       g2.fillRect(Math.random() * 128, Math.random() * 128, U.rand(4, 14), U.rand(3, 10));
     }
     tex.ruin = canvasTexture(c2);
+
+    /* 近/中景楼宇窗户贴图（带独立自发光通道） */
+    tex.winNear = makeWindowTexture(hex(PAL.buildingB));
 
     /* 地面：碎石柏油 + 裂纹 + 褪色标线 + 积水 */
     var g3c = makeCanvas(512, 512), g3 = g3c.getContext('2d');
@@ -1024,6 +1155,54 @@
   }
 
   /* --- 天空 + 云 --- */
+  /* 多层退台式楼宇：每层往上缩进，窗户贴图 + 自发光，顶部可破损。
+   * 返回 { group, material } —— material 用于受击闪色。 */
+  function makeBuilding(w, h, d, opts) {
+    opts = opts || {};
+    var B = AC.building || {};
+    var tiers = opts.tiers !== undefined ? opts.tiers : U.randInt(B.tiersMin || 2, B.tiersMax || 4);
+    var setback = B.setback !== undefined ? B.setback : 0.12;
+    var group = new THREE.Group();
+    var mat = opts.material || new THREE.MeshStandardMaterial({
+      map: opts.winTex.map, emissiveMap: opts.winTex.emissive,
+      emissive: 0xffffff, emissiveIntensity: opts.emissiveIntensity || 0.72,
+      color: 0xffffff, metalness: 0.4, roughness: 0.72
+    });
+    /* 记录原始自发光，便于受击闪色后还原（窗户灯光恢复） */
+    if (!mat.userData) mat.userData = {};
+    mat.userData.baseEmissive = mat.emissive ? mat.emissive.clone() : new THREE.Color(0x000000);
+    mat.userData.baseEmissiveIntensity = mat.emissiveIntensity;
+    var baseY = 0, cw = w, cd = d;
+    for (var t = 0; t < tiers; t++) {
+      var th = (h / tiers) * U.rand(0.72, 1.25);
+      var seg = new THREE.Mesh(new THREE.BoxGeometry(cw, th, cd), mat);
+      seg.position.set(U.rand(-0.5, 0.5), baseY + th / 2, U.rand(-0.5, 0.5));
+      seg.rotation.y = U.rand(-0.08, 0.08);
+      seg.castShadow = true; seg.receiveShadow = true;
+      group.add(seg);
+      baseY += th;
+      cw = Math.max(2, cw * (1 - setback));
+      cd = Math.max(2, cd * (1 - setback));
+    }
+    /* 顶部破损：碎块 + 钢筋 */
+    if (opts.damaged !== false) {
+      for (var c = 0; c < 2; c++) {
+        var chip = new THREE.Mesh(new THREE.BoxGeometry(U.rand(2, 5), U.rand(1.5, 4), U.rand(2, 5)), mat);
+        chip.position.set(U.rand(-w * 0.3, w * 0.3), baseY + U.rand(0.3, 1.8), U.rand(-d * 0.3, d * 0.3));
+        chip.rotation.set(U.rand(-0.4, 0.4), U.rand(0, 3), U.rand(-0.4, 0.4));
+        chip.castShadow = true;
+        group.add(chip);
+      }
+      var rebarCount = B.rebarCount || 3;
+      for (var rb = 0; rb < rebarCount; rb++) {
+        var rebar = Models._cyl(group, 0.1, 0.1, U.rand(2, 5), Models._mat(0x6a7076, { metalness: 1, roughness: 0.5 }),
+          U.rand(-w * 0.3, w * 0.3), baseY + U.rand(0.5, 2), U.rand(-d * 0.3, d * 0.3), 5);
+        rebar.rotation.set(U.rand(-0.3, 0.3), U.rand(0, 3), U.rand(-0.3, 0.3));
+      }
+    }
+    return { group: group, material: mat, height: baseY };
+  }
+
   function buildSky(city, tex) {
     var dome = new THREE.Mesh(
       new THREE.SphereGeometry(700, 32, 16),
@@ -1058,7 +1237,8 @@
     var geo = new THREE.BoxGeometry(1, 1, 1);
     geo.translate(0, 0.5, 0);                             // 以底面为原点，便于按高度缩放
     var mat = new THREE.MeshStandardMaterial({
-      map: tex.window, emissiveMap: tex.window, emissive: 0xffffff, emissiveIntensity: 0.42,
+      map: tex.window, emissiveMap: tex.window, emissive: 0xffffff,
+      emissiveIntensity: (AC.building && AC.building.emissiveIntensity) || 0.42,
       color: PAL.buildingB, metalness: 0.55, roughness: 0.62
     });
     var inst = new THREE.InstancedMesh(geo, mat, spec.count);
@@ -1080,47 +1260,43 @@
     city.group.add(inst);
     city.farInstanced = inst;
 
-    /* 楼顶探照灯：3 盏，来回扫射 */
+    /* 楼顶探照灯：来回扫射，灯束用透明圆锥 */
     if (ART.atmosphere.searchLights) {
       city.towers.sort(function (a, b) { return b.y - a.y; });
-      for (var s = 0; s < 3 && s < city.towers.length; s++) {
+      var slCount = (AC.light && AC.light.searchlightCount) || 3;
+      var coneOpacity = (AC.light && AC.light.searchlightConeOpacity) || 0.07;
+      var sweep = (AC.light && AC.light.searchlightSweep) || 0.9;
+      for (var s = 0; s < slCount && s < city.towers.length; s++) {
         var t = city.towers[s];
         var g = new THREE.Group();
         g.position.set(t.x, t.y, t.z);
         var cone = new THREE.Mesh(
           new THREE.ConeGeometry(9, 130, 18, 1, true),
-          new THREE.MeshBasicMaterial({ color: PAL.searchLight, transparent: true, opacity: 0.055, depthWrite: false, side: THREE.DoubleSide, fog: false })
+          new THREE.MeshBasicMaterial({ color: PAL.searchLight, transparent: true, opacity: coneOpacity, depthWrite: false, side: THREE.DoubleSide, fog: false })
         );
         cone.position.set(0, -65, 0); cone.rotation.x = Math.PI; // 向下
         g.add(cone);
         var lamp = new THREE.Mesh(new THREE.SphereGeometry(1.6, 8, 6), Models._glowMat(PAL.searchLight, 2.5));
         g.add(lamp);
         city.group.add(g);
-        city.searchlights.push({ group: g, cone: cone, speed: U.rand(0.25, 0.5) * (s % 2 ? -1 : 1), phase: U.rand(0, 6.28) });
+        city.searchlights.push({ group: g, cone: cone, speed: U.rand(0.25, 0.5) * (s % 2 ? -1 : 1), phase: U.rand(0, 6.28), sweep: sweep });
       }
     }
   }
 
-  /* --- 中景破损楼宇 + 火花 + 上升浓烟 --- */
+  /* --- 中景多层破损楼宇（窗户自发光）+ 火花 + 上升浓烟 --- */
   function buildMidLayer(city, tex) {
     var spec = ART.city.mid;
-    var mat = new THREE.MeshStandardMaterial({ map: tex.ruin, color: 0xffffff, metalness: 0.4, roughness: 0.85 });
+    var nearEmissive = (AC.building && AC.building.nearEmissiveIntensity) || 0.72;
     city.emberSpots = [];
     for (var i = 0; i < spec.count; i++) {
       var h = U.rand(spec.minH, spec.maxH), w = U.rand(10, 20), d = U.rand(10, 20);
       var x = U.rand(-spec.xRange, spec.xRange), z = U.rand(spec.zStart, spec.zEnd);
-      var b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-      b.position.set(x, h / 2, z);
-      b.castShadow = true; b.receiveShadow = true;
-      city.group.add(b);
-      /* 顶部破损缺口：顶部叠加两个小碎块 */
-      for (var t = 0; t < 2; t++) {
-        var chip = new THREE.Mesh(new THREE.BoxGeometry(U.rand(3, 7), U.rand(2, 5), U.rand(3, 7)), mat);
-        chip.position.set(x + U.rand(-w * 0.3, w * 0.3), h + U.rand(0.5, 2), z + U.rand(-d * 0.3, d * 0.3));
-        chip.rotation.y = U.rand(0, 1.5);
-        chip.castShadow = true;
-        city.group.add(chip);
-      }
+      var bd = makeBuilding(w, h, d, {
+        winTex: tex.winNear, emissiveIntensity: nearEmissive, damaged: true
+      });
+      bd.group.position.set(x, 0, z);
+      city.group.add(bd.group);
       /* 零星爆炸火光 */
       if (ART.atmosphere.embers && Math.random() < 0.5) {
         var em = new THREE.Mesh(new THREE.PlaneGeometry(U.rand(4, 9), U.rand(4, 9)), new THREE.MeshBasicMaterial({ map: tex.ember, color: PAL.emberOrange, transparent: true, opacity: U.rand(0.35, 0.7), depthWrite: false, blending: THREE.AdditiveBlending }));
@@ -1131,7 +1307,7 @@
         city.emberSpots.push(em);
         if (ART.atmosphere.risingSmoke) city.smoke.push(makeSmoke(city, tex, em.position.x, em.position.y, z + d * 0.4));
       }
-      city.layers.mid.push({ type: 'building', x: x, z: z, h: h, w: w, d: d, mesh: b });
+      city.layers.mid.push({ type: 'building', x: x, z: z, h: bd.height, w: w, d: d, mesh: bd.group });
     }
     for (var s = 0; s < 6; s++) {
       city.smoke.push(makeSmoke(city, tex, U.rand(-70, 70), U.rand(2, 12), U.rand(spec.zStart, spec.zEnd)));
@@ -1149,9 +1325,16 @@
     return m;
   }
 
-  /* --- 近景 / 战场两侧：可破坏废墟 --- */
+  /* --- 近景 / 战场两侧：多层可破坏废墟（窗户自发光） --- */
   function buildNearLayers(city, tex) {
-    var mat = new THREE.MeshStandardMaterial({ map: tex.ruin, color: 0x9aa0a4, metalness: 0.4, roughness: 0.88 });
+    var nearEmissive = (AC.building && AC.building.nearEmissiveIntensity) || 0.72;
+    var baseMat = new THREE.MeshStandardMaterial({
+      map: tex.winNear.map, emissiveMap: tex.winNear.emissive,
+      emissive: 0xffffff, emissiveIntensity: nearEmissive,
+      color: 0xffffff, metalness: 0.4, roughness: 0.72
+    });
+    baseMat.userData.baseEmissive = baseMat.emissive.clone();
+    baseMat.userData.baseEmissiveIntensity = baseMat.emissiveIntensity;
     var specN = ART.city.near, specS = ART.city.side;
     var list = [
       { spec: specN, layer: 'near' },
@@ -1163,7 +1346,6 @@
         var h = U.rand(spec.minH, spec.maxH), w = U.rand(8, 14), d = U.rand(8, 14);
         var x, z;
         if (entry.layer === 'side') {
-          /* 战场两侧，避开双方出生点 */
           var sgn = i % 2 ? 1 : -1;
           x = sgn * U.rand(spec.xRange, spec.xRange + 16);
           z = U.rand(spec.zStart, spec.zEnd);
@@ -1171,40 +1353,22 @@
           x = U.rand(-spec.xRange, spec.xRange);
           z = U.rand(spec.zStart, spec.zEnd);
         }
-        var group = new THREE.Group();
+        /* 每栋建筑独立材质，受击闪色时才不会互相影响 */
+        var myMat = baseMat.clone();
+        myMat.userData.baseEmissive = baseMat.userData.baseEmissive.clone();
+        myMat.userData.baseEmissiveIntensity = baseMat.userData.baseEmissiveIntensity;
+        var bd = makeBuilding(w, h, d, { material: myMat, damaged: true });
+        var group = bd.group;
         group.position.set(x, 0, z);
-        /* 每栋建筑独立材质，受击闪红时才不会互相影响 */
-        var myMat = mat.clone();
-        var tiers = U.randInt(2, 4);
-        var baseY = 0, maxR = Math.max(w, d) * 0.62;
-        for (var t = 0; t < tiers; t++) {
-          var th = h / tiers * U.rand(0.7, 1.3);
-          var tw = w * (1 - t * 0.12), td = d * (1 - t * 0.12);
-          var seg = new THREE.Mesh(new THREE.BoxGeometry(tw, th, td), myMat);
-          seg.position.set(U.rand(-0.6, 0.6), baseY + th / 2, U.rand(-0.6, 0.6));
-          seg.castShadow = true; seg.receiveShadow = true;
-          group.add(seg);
-          baseY += th;
-        }
-        /* 破损顶 + 钢筋 */
-        var rubble = new THREE.Mesh(new THREE.BoxGeometry(w * 0.5, 1.2, d * 0.5), Models._mat(0x3a3f42, { roughness: 0.95, flat: true }));
-        rubble.position.set(U.rand(-1, 1), baseY + 0.4, U.rand(-1, 1));
-        rubble.rotation.set(U.rand(-0.3, 0.3), U.rand(0, 3), U.rand(-0.3, 0.3));
-        group.add(rubble);
-        /* 暴露的钢筋 */
-        for (var rb = 0; rb < 3; rb++) {
-          var rebar = Models._cyl(group, 0.1, 0.1, U.rand(2, 5), Models._mat(0x6a7076, { metalness: 1, roughness: 0.5 }), U.rand(-w * 0.3, w * 0.3), baseY + U.rand(0.6, 2), U.rand(-d * 0.3, d * 0.3), 5);
-          rebar.rotation.set(U.rand(-0.3, 0.3), U.rand(0, 3), U.rand(-0.3, 0.3));
-        }
+        var maxR = Math.max(w, d) * 0.62;
         city.group.add(group);
-        city.layers[entry.layer].push({ type: 'ruin', x: x, z: z, mesh: group, h: baseY });
-        /* near 与 side 两层都可被摧毁 */
+        city.layers[entry.layer].push({ type: 'ruin', x: x, z: z, mesh: group, h: bd.height });
         if (spec.destructible) {
           var maxHp = CONFIG.combat.destructible.hp;
           var dObj = {
             object3D: group, position: new THREE.Vector3(x, 0, z), radius: maxR,
             hp: maxHp, maxHp: maxHp, alive: true, flashTimer: 0, material: myMat,
-            mesh: group, layer: entry.layer, height: baseY
+            mesh: group, layer: entry.layer, height: bd.height
           };
           group.traverse(function (o) { if (o.isMesh) { o.userData.destructible = dObj; } });
           city.destructibles.push(dObj);
@@ -1213,11 +1377,16 @@
     });
   }
 
-  /* --- 地面 --- */
+  /* --- 地面：雨后路面更光滑（低粗糙度 + 略高金属度 → 反射灯光） --- */
   function buildGround(city, tex) {
+    var F = AC.fog || {};
     var g = new THREE.Mesh(
       new THREE.PlaneGeometry(CONFIG.arena.width + 120, 260),
-      new THREE.MeshStandardMaterial({ map: tex.ground, color: 0xffffff, metalness: 0.22, roughness: 0.72 })
+      new THREE.MeshStandardMaterial({
+        map: tex.ground, color: 0xffffff,
+        metalness: F.wetMetalness !== undefined ? F.wetMetalness : 0.35,
+        roughness: F.wetRoughness !== undefined ? F.wetRoughness : 0.38
+      })
     );
     g.rotation.x = -Math.PI / 2;
     g.position.set(0, 0, -60);
@@ -1271,16 +1440,20 @@
     }
   }
 
-  /* --- 地面雾 / 火星 --- */
+  /* --- 地面体积雾 / 火星 / 雨夜 --- */
   function buildEffects(city, tex) {
+    var F = AC.fog || {};
     if (ART.atmosphere.groundFog) {
-      for (var i = 0; i < 4; i++) {
+      var layers = F.groundLayers || 6;
+      var baseOpacity = F.groundOpacity || 0.5;
+      var totalH = F.groundHeight || 12;
+      for (var i = 0; i < layers; i++) {
         var f = new THREE.Mesh(
-          new THREE.PlaneGeometry(420, 110),
-          new THREE.MeshBasicMaterial({ map: tex.fog, color: PAL.fog, transparent: true, opacity: 0.42 - i * 0.06, depthWrite: false, side: THREE.DoubleSide, fog: false })
+          new THREE.PlaneGeometry(460, 130),
+          new THREE.MeshBasicMaterial({ map: tex.fog, color: PAL.fog, transparent: true, opacity: baseOpacity * (1 - i / layers), depthWrite: false, side: THREE.DoubleSide, fog: false })
         );
         f.rotation.x = -Math.PI / 2;
-        f.position.set(0, 2.2 + i * 2.4, -70 - i * 22);
+        f.position.set(0, 1.2 + (totalH / layers) * i, -70 - i * 16);
         city.fogPlanes.push(f);
         city.group.add(f);
       }
@@ -1302,6 +1475,47 @@
       city.group.add(points);
       city._emberSeed = pos;
     }
+    /* --- 雨夜：雨幕粒子（带风向倾斜）+ 地面溅水 --- */
+    if (ART.atmosphere.rain) {
+      var R = AC.rain || {};
+      var rc = R.count || 1800;
+      var rpos = new Float32Array(rc * 3);
+      var area = R.area || { x: 140, z: 120 };
+      var hmin = R.heightMin || 2, hmax = R.heightMax || 46;
+      for (var rp = 0; rp < rc; rp++) {
+        rpos[rp * 3]     = U.rand(-area.x, area.x);
+        rpos[rp * 3 + 1] = U.rand(hmin, hmax);
+        rpos[rp * 3 + 2] = U.rand(-area.z * 0.5, area.z * 1.2);
+      }
+      var rgeo = new THREE.BufferGeometry();
+      rgeo.setAttribute('position', new THREE.BufferAttribute(rpos, 3));
+      var rmat = new THREE.PointsMaterial({
+        color: 0xbfd8ff, size: R.streakLen || 2.2, transparent: true,
+        opacity: R.opacity || 0.42, depthWrite: false, sizeAttenuation: true,
+        map: tex.fog      // 复用软贴图，让雨丝略带横向拉伸感
+      });
+      var rainPts = new THREE.Points(rgeo, rmat);
+      rainPts.frustumCulled = false;
+      city.rain = rainPts;
+      city.rainArea = area;
+      city.rainHeightMax = hmax;
+      city.group.add(rainPts);
+
+      /* 地面溅水点（小雨滴落点闪光） */
+      city.splashes = [];
+      var sc = R.splashCount || 140;
+      for (var sp = 0; sp < sc; sp++) {
+        var s = new THREE.Mesh(
+          new THREE.PlaneGeometry(0.8, 0.8),
+          new THREE.MeshBasicMaterial({ color: 0x9fc0e0, transparent: true, opacity: 0, depthWrite: false, fog: false })
+        );
+        s.position.set(U.rand(-area.x, area.x), 0.05, U.rand(-area.z * 0.5, area.z * 1.2));
+        s.rotation.x = -Math.PI / 2;
+        s.userData = { life: 0, max: (R.splashLife || 0.35) * U.rand(0.6, 1.2) };
+        city.group.add(s);
+        city.splashes.push(s);
+      }
+    }
   }
 
   /* --- 城市每帧更新 --- */
@@ -1316,7 +1530,8 @@
     }
     for (i = 0; i < this.searchlights.length; i++) {
       var sl = this.searchlights[i];
-      sl.group.rotation.y = Math.sin(elapsed * sl.speed + sl.phase) * 0.9;
+      var sw = sl.sweep !== undefined ? sl.sweep : 0.9;
+      sl.group.rotation.y = Math.sin(elapsed * sl.speed + sl.phase) * sw;
       sl.group.rotation.z = Math.sin(elapsed * sl.speed * 0.6 + sl.phase) * 0.25;
       sl.cone.material.opacity = 0.04 + 0.02 * (0.5 + 0.5 * Math.sin(elapsed * 3 + sl.phase));
     }
@@ -1344,9 +1559,47 @@
       s.lookAt(camera ? camera.position : new THREE.Vector3());
     }
     /* 雾气漂移 */
+    var driftSpeed = (AC.fog && AC.fog.driftSpeed) || 0.06;
     for (i = 0; i < this.fogPlanes.length; i++) {
       var fp = this.fogPlanes[i];
-      fp.position.x = Math.sin(elapsed * 0.06 + i) * 12;
+      fp.position.x = Math.sin(elapsed * driftSpeed + i) * 12;
+    }
+    /* 雨夜：雨滴下落 + 风向漂移，落地后回到顶部 */
+    if (this.rain) {
+      var Rcfg = AC.rain || {};
+      var fall = Rcfg.fallSpeed || 38;
+      var wind = Rcfg.wind || -3.5;
+      var rarr = this.rain.geometry.attributes.position.array;
+      var rarea = this.rainArea || { x: 140, z: 120 };
+      var rmax = this.rainHeightMax || 46;
+      for (i = 0; i < rarr.length; i += 3) {
+        rarr[i + 1] -= dt * fall;
+        rarr[i] += dt * wind;
+        if (rarr[i + 1] < 0.2) {
+          rarr[i + 1] = rmax;
+          rarr[i] = U.rand(-rarea.x, rarea.x);
+          rarr[i + 2] = U.rand(-rarea.z * 0.5, rarea.z * 1.2);
+        }
+        if (rarr[i] < -rarea.x) rarr[i] = rarea.x;
+        else if (rarr[i] > rarea.x) rarr[i] = -rarea.x;
+      }
+      this.rain.geometry.attributes.position.needsUpdate = true;
+    }
+    /* 地面溅水点闪烁 */
+    if (this.splashes) {
+      for (i = 0; i < this.splashes.length; i++) {
+        var sp = this.splashes[i];
+        sp.userData.life += dt;
+        if (sp.userData.life >= sp.userData.max) {
+          sp.userData.life = 0;
+          sp.position.x = U.rand(-rarea.x, rarea.x);
+          sp.position.z = U.rand(-rarea.z * 0.5, rarea.z * 1.2);
+        }
+        var tt = sp.userData.life / sp.userData.max;
+        sp.material.opacity = (1 - tt) * 0.5;
+        var spsc = 0.4 + tt * 2.2;
+        sp.scale.set(spsc, spsc, spsc);
+      }
     }
     /* 火星漂浮 */
     if (this.embers && this._emberSeed) {
@@ -1372,15 +1625,20 @@
         this._flashPlane.material.opacity = f * 0.32;
       }
     }
-    /* 可破坏建筑受击闪红 */
+    /* 可破坏建筑受击闪红（结束后还原窗户灯光自发光） */
     var list = this.destructibles;
     for (i = 0; i < list.length; i++) {
       var d = list[i];
-      if (d.damageFlash) { d.flashTimer = d.damageFlash; d.damageFlash = 0; }   // 兼容 combat.js 写入的字段
-      if (!d.flashTimer || !d.material || !d.material.emissive) continue;
-      d.flashTimer = Math.max(0, d.flashTimer - dt * 2.2);
-      d.material.emissive.setHex(0xff3200);
-      d.material.emissiveIntensity = d.flashTimer * 0.85;
+      if (d.damageFlash) { d.flashTimer = d.damageFlash; d.damageFlash = 0; }
+      if (!d.material || !d.material.emissive) continue;
+      if (d.flashTimer > 0) {
+        d.flashTimer = Math.max(0, d.flashTimer - dt * 2.2);
+        d.material.emissive.setHex(0xff3200);
+        d.material.emissiveIntensity = Math.max(0.001, d.flashTimer * 0.85);
+      } else if (d.material.userData && d.material.userData.baseEmissive) {
+        d.material.emissive.copy(d.material.userData.baseEmissive);
+        d.material.emissiveIntensity = d.material.userData.baseEmissiveIntensity;
+      }
     }
   }
 

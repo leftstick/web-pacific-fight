@@ -66,7 +66,95 @@
       embers: true,           // 漂浮火星
       distantLightning: true, // 远处低频雷电闪烁
       searchLights: true,     // 楼顶探照灯扫射
-      rain: false             // 预留：雨幕
+      rain: true              // 雨夜雨幕
+    }
+  };
+
+  /* ===========================================================================
+   * ART_CONFIG —— 视觉参数统一管理（材质 / 贴图 / 建筑 / 雨雾 / 灯光 / 受击反馈）
+   *   所有可调视觉量集中于此，models.js / renderer.js 统一读取，便于迭代调参。
+   *   与 ART.palette / ART.city / ART.atmosphere 并存，旧字段保留向后兼容。
+   * ======================================================================== */
+  var ART_CONFIG = {
+    /* ---------- 单位 PBR 材质默认值 ---------- */
+    material: {
+      mecha: { metalness: 0.62, roughness: 0.5,  envMapIntensity: 1.0 },
+      accent:{ metalness: 0.72, roughness: 0.42, envMapIntensity: 1.0 },
+      dark:  { metalness: 0.5,  roughness: 0.66, envMapIntensity: 0.8 },
+      kaijuSkin: { metalness: 0.05, roughness: 0.9 },
+      kaijuBelly:{ metalness: 0.05, roughness: 0.85 },
+      kaijuPlate:{ metalness: 0.35, roughness: 0.8 },
+      defaultMetalness: 0.55,
+      defaultRoughness: 0.5
+    },
+    /* ---------- 发光 ---------- */
+    glow: {
+      mechaCore: 1.15,        // 机甲主反应堆自发光强度
+      mechaWarm: 0.85,        // 机甲暖辅光
+      kaijuCore: 0.95,        // 怪兽主发光
+      kaijuSoft: 0.6,         // 怪兽软发光
+      pulseSpeed: 1.6,        // 发光呼吸频率（Hz）
+      pulseDepth: 0.18,       // 呼吸幅度（0~1）
+      hitFlashIntensity: 2.4  // 受击闪白峰值 emissiveIntensity
+    },
+    /* ---------- 程序化贴图（机甲 / 怪兽） ---------- */
+    unitTexture: {
+      mechaPanelGap: 64,      // 面板缝隙间隔(px)
+      mechaRivetsPerPanel: 3, // 每格铆钉数
+      mechaScratchCount: 90,  // 划痕条数
+      kaijuScaleCount: 1400,  // 鳞片斑点数
+      kaijuScaleGrid: 26,     // 鳞片网格间距
+      dirt: 0.18              // 污渍密度上限
+    },
+    /* ---------- 城市多层建筑 ---------- */
+    building: {
+      tiersMin: 2, tiersMax: 4,           // 每层楼段数
+      setback: 0.12,                      // 每往上一层缩进比例
+      windowLitChance: 0.42,              // 窗户点亮概率
+      windowWarmRatio: 0.70,              // 暖光窗占比
+      emissiveIntensity: 0.55,            // 远景窗户自发光
+      nearEmissiveIntensity: 0.72,        // 近景窗户自发光（更亮）
+      damageTop: true,                    // 顶部破损
+      rebarCount: 3,                      // 暴露钢筋数
+      windowTexSize: 128                  // 窗户贴图分辨率
+    },
+    /* ---------- 雨夜 ---------- */
+    rain: {
+      enabled: true,
+      count: 1800,             // 雨滴数量
+      area: { x: 140, z: 120 },// 雨幕覆盖范围（以战场为中心）
+      heightMin: 2, heightMax: 46,
+      fallSpeed: 38,           // 下落速度
+      wind: -3.5,              // 水平风速（向左）
+      streakLen: 2.2,          // 雨丝长度
+      opacity: 0.42,
+      splashCount: 140,        // 地面溅水点
+      splashLife: 0.35
+    },
+    /* ---------- 体积雾 ---------- */
+    fog: {
+      groundLayers: 6,         // 地面雾平面层数
+      groundOpacity: 0.5,      // 地面雾基础不透明度
+      groundHeight: 12,        // 地面雾总高度
+      driftSpeed: 0.06,
+      wetRoughness: 0.38,      // 雨后地面粗糙度（更光滑=反射更强）
+      wetMetalness: 0.35       // 雨后地面金属度
+    },
+    /* ---------- 灯光 ---------- */
+    light: {
+      searchlightCount: 3,
+      searchlightConeOpacity: 0.07,
+      searchlightSweep: 0.9,   // 扫射摆角
+      rimIntensity: 0.42,      // 冷色轮廓补光
+      moonIntensity: 0.75,
+      hemiIntensity: 0.34,
+      ambIntensity: 0.10
+    },
+    /* ---------- 受击反馈 ---------- */
+    hitFlash: {
+      duration: 0.18,          // 闪白持续（秒）
+      decay: 5.5,              // 衰减系数
+      color: 0xffffff          // 闪白色（白）
     }
   };
 
@@ -558,6 +646,7 @@
    * ======================================================================== */
   GAME.CONFIG = {
     art: ART,
+    artConfig: ART_CONFIG,
     camera: CAMERA,
     arena: ARENA,
     combat: COMBAT,
@@ -577,6 +666,7 @@
       return null;
     }
   };
+  GAME.ART_CONFIG = ART_CONFIG;   // 全局便捷访问：视觉参数统一入口
   GAME.INPUT_CONFIG = INPUT_CONFIG;
   GAME.CONFIG.input = INPUT_CONFIG;
 
