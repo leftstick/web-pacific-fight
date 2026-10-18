@@ -1,0 +1,1223 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- 无外部图标文件：empty data URI 直接抑制浏览器 favicon 请求 -->
+<link rel="icon" href="data:,">
+<title>环太平洋 · 机甲对决</title>
+
+<!-- =========================================================================
+     importmap：three r170 仅提供 ESM 构建，用裸模块名映射到 CDN
+     （禁止 import 本地 js 文件，本地模块均为经典 <script>）
+     ========================================================================= -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+
+<style>
+/* =============================================================================
+ * index.html 内联样式
+ * 风格：环太平洋暗色 HUD —— 深青黑底 / 青色 #6fd0ff / 琥珀 #ffc86b
+ * 结构：① 变量与基础  ② 全屏特效  ③ 画布   ④ 通用屏幕/面板/按钮
+ *      ⑤ 加载   ⑥ 主菜单   ⑦ 选择   ⑧ 战斗 HUD
+ *      ⑨ 暂停   ⑩ 结算   ⑪ 帮助   ⑫ 错误覆盖层  ⑬ 响应式
+ * ========================================================================== */
+
+/* ---- ① 变量与基础 -------------------------------------------------------- */
+:root {
+  --bg-0: #05090b;
+  --bg-1: #08131a;
+  --bg-2: #0d1e24;
+  --panel: rgba(8, 19, 26, 0.86);
+  --panel-2: rgba(6, 13, 18, 0.92);
+  --cyan: #6fd0ff;
+  --cyan-dim: rgba(111, 208, 255, 0.30);
+  --cyan-soft: rgba(111, 208, 255, 0.12);
+  --amber: #ffc86b;
+  --amber-dim: rgba(255, 200, 107, 0.30);
+  --teal: #69ffc8;
+  --danger: #ff6a52;
+  --text: #cfe8ef;
+  --muted: #7d99a3;
+  --font: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Source Han Sans SC",
+          "Noto Sans CJK SC", -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: var(--bg-0);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 1.5;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+h1, h2, h3, p, ul, li { margin: 0; padding: 0; }
+ul { list-style: none; }
+button { font-family: inherit; }
+
+/* ---- ② 全屏特效（扫描线 / 暗角，纯装饰、不拦事件） --------------------- */
+.fx {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+.fx-vignette {
+  z-index: 55;
+  background: radial-gradient(120% 90% at 50% 46%, rgba(0,0,0,0) 52%, rgba(0,0,0,0.60) 100%);
+}
+.fx-scanlines {
+  z-index: 60;
+  opacity: 0.55;
+  mix-blend-mode: multiply;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0,0,0,0) 0px, rgba(0,0,0,0) 2px,
+    rgba(0,0,0,0.16) 3px, rgba(0,0,0,0) 4px
+  );
+}
+
+/* ---- ③ 画布（16:9 letterbox：宽高比固定，四周留黑边） ------------------- */
+#game-canvas {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  display: block;
+  width: 100vw;
+  height: 56.25vw;            /* 100vw * 9/16 */
+  max-width: 177.78vh;        /* 100vh * 16/9 */
+  max-height: 100vh;
+  background: var(--bg-0);
+  z-index: 0;
+}
+
+/* ---- ④ 通用：屏幕 / 面板 / 按钮 ---------------------------------------- */
+.screen {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.35s ease, visibility 0.35s ease;
+}
+.screen.active {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+.screen.hidden { display: none; }
+
+/* 通用面板：切角 + 细边框 */
+.panel, .hud-frame {
+  position: relative;
+  background: linear-gradient(180deg, var(--panel), var(--panel-2));
+  border: 1px solid var(--cyan-dim);
+  clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px);
+  box-shadow: 0 0 30px rgba(0,0,0,0.65), inset 0 0 44px rgba(9, 34, 44, 0.55);
+}
+
+.panel-title {
+  font-size: clamp(18px, 2.2vw, 26px);
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: var(--cyan);
+  text-align: center;
+  padding-bottom: 10px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--cyan-dim);
+  text-shadow: 0 0 12px rgba(111, 208, 255, 0.45);
+}
+
+/* 通用按钮 */
+.btn {
+  position: relative;
+  cursor: pointer;
+  padding: 10px 24px;
+  font-size: clamp(13px, 1.15vw, 16px);
+  letter-spacing: 0.1em;
+  color: var(--text);
+  background: linear-gradient(180deg, var(--cyan-soft), rgba(111, 208, 255, 0.03));
+  border: 1px solid var(--cyan-dim);
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+  transition: color 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, transform 0.08s ease;
+}
+.btn:hover, .btn.active, .btn:focus-visible {
+  color: #eafaff;
+  border-color: var(--cyan);
+  box-shadow: inset 0 0 16px rgba(111, 208, 255, 0.28), 0 0 14px rgba(111, 208, 255, 0.30);
+  outline: none;
+}
+.btn:active { transform: translateY(1px); }
+.btn.primary {
+  color: #fff4dc;
+  border-color: var(--amber-dim);
+  background: linear-gradient(180deg, rgba(255,200,107,0.18), rgba(255,200,107,0.04));
+}
+.btn.primary:hover, .btn.primary.active, .btn.primary:focus-visible {
+  border-color: var(--amber);
+  box-shadow: inset 0 0 18px rgba(255,200,107,0.30), 0 0 16px rgba(255,200,107,0.32);
+}
+.btn.ghost { background: rgba(111, 208, 255, 0.04); }
+.btn[disabled] { opacity: 0.4; cursor: default; }
+
+/* 动态按键提示占位（由 GAME.Input.refreshPrompts 填充文本） */
+.prompt-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: clamp(11px, 0.95vw, 13px);
+  letter-spacing: 0.04em;
+}
+.prompt-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 22px;
+  padding: 0 8px;
+  color: var(--cyan);
+  font-weight: 700;
+  border: 1px solid var(--cyan-dim);
+  background: rgba(111, 208, 255, 0.08);
+  clip-path: polygon(5px 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%, 0 5px);
+}
+.prompt-label { color: var(--muted); }
+
+/* ---- ⑤ 加载界面 --------------------------------------------------------- */
+#screen-loading { background: radial-gradient(120% 100% at 50% 40%, var(--bg-1), var(--bg-0) 90%); }
+.loading-wrap { width: min(560px, 82vw); }
+.loading-frame { padding: 30px 34px; }
+.loading-title {
+  font-size: clamp(15px, 1.5vw, 19px);
+  letter-spacing: 0.2em;
+  color: var(--cyan);
+  text-align: center;
+  margin-bottom: 20px;
+  text-shadow: 0 0 12px rgba(111, 208, 255, 0.4);
+}
+.loading-bar {
+  position: relative;
+  height: 12px;
+  background: rgba(4, 10, 13, 0.9);
+  border: 1px solid var(--cyan-dim);
+  overflow: hidden;
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+}
+#loading-fill {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 0%;
+  background: linear-gradient(90deg, #2f7ea3, var(--cyan));
+  box-shadow: 0 0 16px rgba(111, 208, 255, 0.7);
+  transition: width 0.2s linear;
+}
+.loading-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-top: 12px;
+  font-size: clamp(12px, 1.05vw, 14px);
+  letter-spacing: 0.08em;
+}
+#loading-pct { color: var(--amber); font-weight: 700; }
+#loading-text { color: var(--muted); }
+
+/* ---- ⑥ 主菜单（CSS 动画夜景天际线 + 光柱） ----------------------------- */
+#screen-menu { background: var(--bg-0); overflow: hidden; }
+.skyline {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  background: linear-gradient(180deg, #071119 0%, var(--bg-2) 42%, #05090b 100%);
+}
+.sky-glow {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 46%;
+  background: radial-gradient(80% 120% at 50% 100%, rgba(255,200,107,0.16), rgba(111,208,255,0.06) 45%, rgba(0,0,0,0) 72%);
+  animation: horizon-pulse 9s ease-in-out infinite;
+}
+@keyframes horizon-pulse { 0%,100% { opacity: 0.55; } 50% { opacity: 0.95; } }
+
+.buildings { position: absolute; left: -4%; right: -4%; bottom: 0; height: 62%; }
+.buildings i {
+  position: absolute;
+  bottom: 0;
+  left: var(--x);
+  width: var(--w);
+  height: var(--h);
+  background: linear-gradient(180deg, #0f232b, #081218 88%);
+  box-shadow: inset 0 0 0 1px rgba(111, 208, 255, 0.06), 0 -6px 22px rgba(9, 30, 40, 0.5);
+}
+.buildings i::after {
+  content: "";
+  position: absolute;
+  inset: 12% 16% 0 16%;
+  background-image:
+    repeating-linear-gradient(90deg, rgba(255, 200, 107, 0.55) 0 2px, rgba(0,0,0,0) 2px 9px),
+    repeating-linear-gradient(0deg, rgba(191, 227, 255, 0.22) 0 2px, rgba(0,0,0,0) 2px 12px);
+  background-blend-mode: screen;
+  opacity: 0.38;
+  animation: win-flicker var(--d, 5s) ease-in-out infinite;
+}
+@keyframes win-flicker { 0%,100% { opacity: 0.28; } 45% { opacity: 0.58; } 70% { opacity: 0.34; } }
+
+/* 楼顶探照灯光柱（缓慢扫射） */
+.beam {
+  position: absolute;
+  bottom: 24%;
+  width: 3px;
+  height: 78%;
+  background: linear-gradient(180deg, rgba(111,208,255,0), rgba(111,208,255,0.5), rgba(111,208,255,0));
+  filter: blur(1.4px);
+  transform-origin: bottom center;
+  animation: beam-sweep 9s ease-in-out infinite;
+}
+.beam-a { left: 26%; }
+.beam-b { left: 64%; height: 66%; animation-duration: 12s; animation-delay: -4s; background: linear-gradient(180deg, rgba(255,200,107,0), rgba(255,200,107,0.42), rgba(255,200,107,0)); }
+@keyframes beam-sweep {
+  0%, 100% { transform: rotate(-20deg) scaleY(0.9); opacity: 0; }
+  18% { opacity: 0.75; }
+  50% { transform: rotate(14deg) scaleY(1); opacity: 0.5; }
+  82% { opacity: 0.2; }
+}
+
+.menu-wrap {
+  position: relative;
+  z-index: 1;
+  width: min(640px, 88vw);
+  padding: 40px clamp(20px, 4vw, 52px) 34px;
+  text-align: center;
+}
+.menu-title h1 {
+  font-size: clamp(30px, 4.4vw, 56px);
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  color: #eefaff;
+  text-shadow: 0 0 18px rgba(111, 208, 255, 0.55), 0 0 46px rgba(111, 208, 255, 0.25);
+}
+.menu-title .subtitle {
+  margin-top: 8px;
+  font-size: clamp(11px, 1.3vw, 16px);
+  letter-spacing: 0.42em;
+  color: var(--amber);
+  opacity: 0.9;
+}
+.menu-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 34px auto 22px;
+  width: min(340px, 76%);
+}
+.menu-btn {
+  cursor: pointer;
+  padding: 12px 20px;
+  font-size: clamp(14px, 1.4vw, 18px);
+  letter-spacing: 0.22em;
+  color: var(--text);
+  text-align: center;
+  background: linear-gradient(180deg, rgba(8,19,26,0.9), rgba(6,13,18,0.7));
+  border: 1px solid var(--cyan-dim);
+  clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+  transition: color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, transform 0.12s ease;
+}
+.menu-btn:hover, .menu-btn.active, .menu-btn:focus-visible {
+  color: #eafaff;
+  border-color: var(--cyan);
+  box-shadow: inset 0 0 20px rgba(111, 208, 255, 0.20), 0 0 18px rgba(111, 208, 255, 0.30);
+  transform: translateX(4px);
+  outline: none;
+}
+.menu-info {
+  display: flex;
+  justify-content: center;
+  gap: clamp(16px, 4vw, 44px);
+  margin-top: 6px;
+  font-size: clamp(12px, 1.05vw, 14px);
+  letter-spacing: 0.06em;
+}
+.info-row { display: inline-flex; align-items: center; gap: 8px; }
+.info-label { color: var(--muted); }
+.info-label::after { content: "·"; margin-left: 8px; color: var(--cyan-dim); }
+#menu-difficulty { color: var(--amber); font-weight: 700; }
+#menu-controller { color: var(--cyan); }
+.menu-hint {
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(111, 208, 255, 0.12);
+  font-size: clamp(11px, 0.95vw, 13px);
+  color: var(--muted);
+  letter-spacing: 0.08em;
+}
+
+/* ---- ⑦ 选择界面（三列：机甲 / VS+预览 / 怪兽） --------------------- */
+#screen-select { background: radial-gradient(130% 100% at 50% 30%, var(--bg-1), var(--bg-0) 92%); }
+.select-wrap {
+  width: min(1200px, 94vw);
+  max-height: 92vh;
+  padding: clamp(16px, 2vw, 26px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: auto;
+}
+.select-head { text-align: center; }
+.select-head h2 {
+  font-size: clamp(16px, 1.9vw, 24px);
+  letter-spacing: 0.24em;
+  color: var(--cyan);
+  text-shadow: 0 0 14px rgba(111, 208, 255, 0.4);
+}
+.select-grid {
+  display: grid;
+  grid-template-columns: 1fr 0.92fr 1fr;
+  gap: clamp(10px, 1.6vw, 22px);
+  align-items: start;
+}
+.select-col {
+  position: relative;
+  padding: clamp(12px, 1.5vw, 20px);
+  background: linear-gradient(180deg, rgba(8,19,26,0.86), rgba(6,13,18,0.92));
+  border: 1px solid var(--cyan-dim);
+  clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px);
+  min-height: 360px;
+}
+.col-kaiju { border-color: var(--amber-dim); }
+.select-col h3 {
+  font-size: clamp(11px, 1.05vw, 13px);
+  letter-spacing: 0.24em;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+.unit-name {
+  font-size: clamp(17px, 1.9vw, 24px);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #ecfaff;
+  text-shadow: 0 0 14px rgba(111, 208, 255, 0.35);
+}
+.col-kaiju .unit-name { text-shadow: 0 0 14px rgba(255, 200, 107, 0.35); }
+.unit-tag {
+  display: inline-block;
+  margin: 6px 0 10px;
+  padding: 2px 10px;
+  font-size: clamp(11px, 0.95vw, 12px);
+  letter-spacing: 0.12em;
+  color: var(--cyan);
+  border: 1px solid var(--cyan-dim);
+  background: rgba(111, 208, 255, 0.08);
+}
+.col-kaiju .unit-tag { color: var(--amber); border-color: var(--amber-dim); background: rgba(255, 200, 107, 0.08); }
+.unit-desc {
+  font-size: clamp(12px, 1.05vw, 14px);
+  line-height: 1.7;
+  color: var(--muted);
+  min-height: 3.4em;
+}
+.unit-stats {
+  margin: 12px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+/* 属性条（ui.js 可往里写入带 --v 的条形节点） */
+.stat-row { display: grid; grid-template-columns: 5em 1fr auto; align-items: center; gap: 8px; font-size: clamp(11px, 0.95vw, 12px); color: var(--muted); }
+.stat-track { position: relative; height: 8px; background: rgba(4,10,13,0.9); border: 1px solid rgba(111,208,255,0.18); overflow: hidden; }
+.stat-fill { position: absolute; left: 0; top: 0; bottom: 0; width: calc(var(--v, 0) * 100%); background: linear-gradient(90deg, #2f7ea3, var(--cyan)); }
+.col-kaiju .stat-fill { background: linear-gradient(90deg, #b57725, var(--amber)); }
+.stat-val { color: var(--text); font-weight: 700; }
+
+.unit-skills {
+  margin-top: 6px;
+  font-size: clamp(11px, 0.95vw, 13px);
+  line-height: 1.7;
+  color: var(--text);
+  min-height: 2.8em;
+}
+.unit-skills .skill-name { color: var(--amber); }
+.unit-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+/* 候选项（ui.js 生成；也支持预先的静态占位） */
+.unit-list .unit-item {
+  padding: 5px 12px;
+  font-size: clamp(11px, 0.95vw, 12px);
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  border: 1px solid rgba(111, 208, 255, 0.18);
+  background: rgba(111, 208, 255, 0.05);
+  cursor: pointer;
+}
+.unit-list .unit-item.active {
+  color: #eafaff;
+  border-color: var(--cyan);
+  box-shadow: inset 0 0 12px rgba(111, 208, 255, 0.22);
+}
+
+/* 中列：VS 徽标 + 3D 预览宿主 */
+.col-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  background: transparent;
+  border: none;
+  clip-path: none;
+  min-height: 360px;
+}
+.vs-badge {
+  font-size: clamp(22px, 3vw, 40px);
+  font-weight: 900;
+  font-style: italic;
+  letter-spacing: 0.08em;
+  color: var(--amber);
+  text-shadow: 0 0 18px rgba(255, 200, 107, 0.6);
+  animation: vs-pulse 2.4s ease-in-out infinite;
+}
+@keyframes vs-pulse { 0%,100% { opacity: 0.7; transform: scale(1); } 50% { opacity: 1; transform: scale(1.06); } }
+#select-preview {
+  position: relative;
+  width: 100%;
+  min-height: 260px;
+  aspect-ratio: 16 / 11;
+  background:
+    linear-gradient(180deg, rgba(9,22,30,0.85), rgba(5,10,13,0.9)),
+    repeating-linear-gradient(0deg, rgba(111,208,255,0.05) 0 1px, rgba(0,0,0,0) 1px 6px);
+  border: 1px solid var(--cyan-dim);
+  overflow: hidden;
+}
+#select-preview canvas { display: block; width: 100%; height: 100%; }
+
+.select-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(111, 208, 255, 0.12);
+}
+.select-diff { display: inline-flex; align-items: center; gap: 8px; font-size: clamp(12px, 1.05vw, 14px); }
+.select-diff .label { color: var(--muted); }
+#select-difficulty { color: var(--amber); font-weight: 700; letter-spacing: 0.08em; }
+#select-prompts { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; }
+.select-btns { display: flex; gap: 12px; }
+
+/* ---- ⑧ 战斗 HUD（pointer-events:none，只做显示） ----------------------- */
+#screen-fight {
+  display: block;
+  pointer-events: none;   /* HUD 永不拦截鼠标/触控 */
+  padding: 2.2vh 2.6vw;
+}
+.hud-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 2vw;
+}
+.hud-side { width: 36%; display: flex; flex-direction: column; gap: 6px; }
+.hud-right { align-items: flex-end; text-align: right; }
+.hud-name {
+  font-size: clamp(13px, 1.25vw, 17px);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: #eafaff;
+  text-shadow: 0 0 10px rgba(0,0,0,0.8);
+}
+.hud-right .hud-name { color: #fff4dc; }
+
+.bar { position: relative; width: 100%; }
+.bar-track {
+  position: relative;
+  height: 16px;
+  background: rgba(4, 10, 13, 0.92);
+  border: 1px solid var(--cyan-dim);
+  overflow: hidden;
+  clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px);
+}
+.hud-right .bar-track { border-color: var(--amber-dim); }
+.bar-fill {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 0%;
+  transition: width 0.18s linear;
+}
+/* 敌方血条从右向左消减：fill 锚定右侧，避免翻转容器导致数字/刻度镜像 */
+.hud-right .bar-fill { left: auto; right: 0; }
+.bar-fill.hp { background: linear-gradient(180deg, #bff3ff, #3a9fd0); }
+.hud-right .bar-fill.hp { background: linear-gradient(180deg, #ffd9a0, #c98a3a); }
+.bar-fill.hp.low { background: linear-gradient(180deg, #ff9a86, #c93a24); animation: hp-low 0.32s steps(2, end) infinite; }
+@keyframes hp-low { 0% { filter: brightness(1.25); } 100% { filter: brightness(0.85); } }
+.bar-segments {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(90deg, rgba(0,0,0,0) 0 calc(100% / 12 - 2px), rgba(3, 8, 11, 0.9) calc(100% / 12 - 2px) calc(100% / 12));
+}
+.hud-right .bar-segments { background: repeating-linear-gradient(270deg, rgba(0,0,0,0) 0 calc(100% / 12 - 2px), rgba(3, 8, 11, 0.9) calc(100% / 12 - 2px) calc(100% / 12)); }
+.bar-value {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  font-size: clamp(10px, 0.85vw, 12px);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #dff6ff;
+  text-shadow: 0 0 6px rgba(0,0,0,0.9);
+}
+.bar.sub .bar-track { height: 9px; border-color: rgba(111, 208, 255, 0.18); }
+.hud-right .bar.sub .bar-track { border-color: rgba(255, 200, 107, 0.18); }
+.bar-fill.stamina { background: linear-gradient(180deg, #c4ffe9, #2f9c7a); }
+.bar-fill.energy { background: linear-gradient(180deg, #ffe3b3, #d98a2a); }
+.bar-fill.stun { background: linear-gradient(180deg, #ffb0a2, #b73b2a); }
+
+.hud-flags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.hud-right .hud-flags { justify-content: flex-end; }
+.flag {
+  display: none;
+  padding: 2px 9px;
+  font-size: clamp(10px, 0.85vw, 12px);
+  letter-spacing: 0.08em;
+  border: 1px solid var(--cyan-dim);
+  color: var(--cyan);
+  background: rgba(111, 208, 255, 0.08);
+}
+.flag.active { display: inline-block; }
+#p-ultimate-ready.active { color: var(--amber); border-color: var(--amber); box-shadow: 0 0 12px rgba(255, 200, 107, 0.5); }
+#p-stunned.active, #p-exhausted.active { color: var(--danger); border-color: rgba(255, 106, 82, 0.6); background: rgba(255, 106, 82, 0.10); }
+
+.hud-center { flex: 1; text-align: center; padding-top: 1vh; }
+.center-text {
+  min-height: 1.2em;
+  font-size: clamp(26px, 4.6vw, 62px);
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  color: #fff;
+  text-shadow: 0 0 22px rgba(111, 208, 255, 0.7), 0 0 46px rgba(111, 208, 255, 0.3);
+  opacity: 0;
+}
+.center-text.active {
+  opacity: 1;
+  animation: center-pop 0.5s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
+@keyframes center-pop { 0% { transform: scale(0.6); opacity: 0; } 60% { transform: scale(1.08); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
+.combo-display {
+  margin-top: 6px;
+  font-size: clamp(18px, 2.6vw, 34px);
+  font-weight: 900;
+  font-style: italic;
+  letter-spacing: 0.06em;
+  color: var(--amber);
+  text-shadow: 0 0 18px rgba(255, 200, 107, 0.6);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.combo-display.active { opacity: 1; }
+
+.ultimate-banner {
+  position: absolute;
+  left: 0; right: 0;
+  top: 30%;
+  text-align: center;
+  font-size: clamp(22px, 4vw, 54px);
+  font-weight: 900;
+  letter-spacing: 0.2em;
+  color: var(--amber);
+  text-shadow: 0 0 24px rgba(255, 200, 107, 0.75), 0 0 60px rgba(255, 200, 107, 0.4);
+  opacity: 0;
+  pointer-events: none;
+}
+.ultimate-banner.active { opacity: 1; animation: ultimate-flash 1.2s ease-out both; }
+@keyframes ultimate-flash {
+  0% { transform: scale(1.3); opacity: 0; filter: blur(6px); }
+  30% { transform: scale(1); opacity: 1; filter: blur(0); }
+  100% { opacity: 0.9; }
+}
+
+.damage-layer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+
+.fight-prompts {
+  position: absolute;
+  left: 50%;
+  bottom: 2vh;
+  transform: translateX(-50%);
+  display: flex;
+  flex-wrap: wrap;
+  gap: clamp(8px, 1.3vw, 18px);
+  justify-content: center;
+  padding: 8px 16px;
+  background: rgba(5, 12, 16, 0.55);
+  border: 1px solid rgba(111, 208, 255, 0.14);
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+}
+
+/* ---- ⑨ 暂停界面 -------------------------------------------------------- */
+.pause-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(3, 8, 11, 0.66);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+.pause-panel {
+  position: relative;
+  z-index: 1;
+  width: min(420px, 82vw);
+  padding: 28px 32px 26px;
+}
+.pause-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.pause-item {
+  cursor: pointer;
+  width: 100%;
+  padding: 11px 18px;
+  text-align: left;
+  font-size: clamp(13px, 1.2vw, 16px);
+  letter-spacing: 0.12em;
+  color: var(--text);
+  background: linear-gradient(180deg, rgba(111,208,255,0.06), rgba(111,208,255,0.02));
+  border: 1px solid rgba(111, 208, 255, 0.18);
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+  transition: color 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, transform 0.1s ease;
+}
+.pause-item:hover, .pause-item.active, .pause-item:focus-visible {
+  color: #eafaff;
+  border-color: var(--cyan);
+  box-shadow: inset 0 0 16px rgba(111, 208, 255, 0.22);
+  transform: translateX(4px);
+  outline: none;
+}
+.pause-hint {
+  display: flex;
+  gap: 18px;
+  justify-content: center;
+  padding-top: 14px;
+  border-top: 1px solid rgba(111, 208, 255, 0.12);
+}
+
+/* ---- ⑩ 结算界面 -------------------------------------------------------- */
+.result-panel {
+  width: min(520px, 84vw);
+  padding: 34px 36px 28px;
+  text-align: center;
+}
+.result-title {
+  font-size: clamp(30px, 5vw, 60px);
+  font-weight: 900;
+  letter-spacing: 0.24em;
+  color: var(--amber);
+  text-shadow: 0 0 26px rgba(255, 200, 107, 0.6), 0 0 60px rgba(255, 200, 107, 0.3);
+  margin-bottom: 8px;
+}
+.result-title.defeat { color: var(--danger); text-shadow: 0 0 26px rgba(255, 106, 82, 0.6); }
+.result-stats {
+  margin: 18px 0 22px;
+  font-size: clamp(12px, 1.1vw, 15px);
+  line-height: 1.9;
+  color: var(--text);
+}
+.result-stats .stat-line { display: flex; justify-content: space-between; padding: 2px 0; border-bottom: 1px dashed rgba(111, 208, 255, 0.12); }
+.result-stats .stat-line span:last-child { color: var(--amber); font-weight: 700; }
+.result-btns { display: flex; gap: 14px; justify-content: center; }
+.result-hint {
+  display: flex;
+  gap: 18px;
+  justify-content: center;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(111, 208, 255, 0.12);
+}
+
+/* ---- ⑪ 帮助界面 -------------------------------------------------------- */
+.help-wrap {
+  width: min(680px, 90vw);
+  max-height: 90vh;
+  padding: clamp(18px, 2.4vw, 30px);
+  overflow: auto;
+}
+#help-body {
+  columns: 2;
+  column-gap: 32px;
+  font-size: clamp(12px, 1.05vw, 14px);
+  line-height: 1.8;
+  color: var(--text);
+  margin-bottom: 20px;
+}
+#help-body .help-section { break-inside: avoid; margin-bottom: 16px; }
+#help-body .help-section h3 {
+  font-size: clamp(12px, 1.05vw, 14px);
+  letter-spacing: 0.14em;
+  color: var(--cyan);
+  margin-bottom: 8px;
+}
+#help-body .help-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 3px 0;
+  border-bottom: 1px dashed rgba(111, 208, 255, 0.1);
+  color: var(--muted);
+}
+#help-body .help-row b { color: var(--amber); font-weight: 700; }
+#help-back { display: block; margin: 0 auto; }
+
+/* ---- ⑫ 错误覆盖层 ------------------------------------------------------ */
+#error-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(3, 8, 11, 0.94);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.25s ease, visibility 0.25s ease;
+}
+#error-overlay.active { opacity: 1; visibility: visible; pointer-events: auto; }
+.error-box {
+  width: min(640px, 90vw);
+  padding: 26px 30px;
+  background: linear-gradient(180deg, rgba(24, 12, 12, 0.94), rgba(10, 6, 6, 0.96));
+  border: 1px solid rgba(255, 106, 82, 0.5);
+  clip-path: polygon(16px 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%, 0 16px);
+  box-shadow: 0 0 40px rgba(255, 106, 82, 0.22);
+}
+.error-title {
+  font-size: clamp(16px, 1.8vw, 22px);
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  color: var(--danger);
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 106, 82, 0.3);
+}
+#error-message {
+  margin: 0;
+  font-family: var(--font);
+  font-size: clamp(12px, 1.05vw, 14px);
+  line-height: 1.8;
+  color: #ffd9d2;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ---- ⑬ 响应式（1280x720 以上最佳；窄屏收敛） --------------------------- */
+@media (max-width: 980px) {
+  #help-body { columns: 1; }
+  .select-grid { grid-template-columns: 1fr; }
+  .col-center { order: -1; }
+  .hud-side { width: 44%; }
+  .buildings i:nth-child(n+9) { display: none; }
+}
+@media (max-width: 640px) {
+  .menu-wrap { padding: 26px 16px; }
+  .hud-side { width: 47%; }
+  .fight-prompts { gap: 8px 12px; padding: 6px 10px; }
+}
+</style>
+</head>
+<body>
+
+<!-- =========================================================================
+     全局错误兜底：任何脚本/CDN 加载或运行失败，都显示中文错误覆盖层，
+     不出现白屏。window.onerror / unhandledrejection 统一接入此处。
+     （在 <body> 起始处注册，使用捕获阶段以捕获资源加载错误）
+     ========================================================================= -->
+<script>
+(function (w, d) {
+  'use strict';
+  var pending = null;
+
+  /* 把消息写入 #error-overlay（若覆盖层尚未解析，则暂存到 DOMContentLoaded） */
+  function apply(msg, detail) {
+    var ov = d.getElementById('error-overlay');
+    var el = d.getElementById('error-message');
+    if (!ov || !el) { pending = [msg, detail]; return; }
+    var text = msg || '发生未知错误，游戏无法继续。';
+    if (detail) text += '\n\n' + detail;
+    el.textContent = text;
+    ov.classList.add('active');
+    ov.classList.remove('hidden');
+  }
+
+  function fatal(msg, detail) {
+    try { console.error('[GAME FATAL]', msg, detail || ''); } catch (e) {}
+    apply(msg, detail);
+  }
+
+  /* 暴露给内联模块脚本与外部脚本使用 */
+  w.__GAME_FATAL__ = fatal;
+
+  /* 资源加载失败（img/script/link）在捕获阶段才能拿到 target */
+  w.addEventListener('error', function (e) {
+    var t = e && e.target;
+    if (t && t !== w && t.tagName === 'SCRIPT') {
+      fatal('脚本资源加载失败。', '无法加载：' + (t.src || '内联脚本') +
+        '\n请检查网络连接或 CDN（jsDelivr）是否可用，然后刷新页面。');
+      return;
+    }
+    var m = (e && e.message) ? e.message : '页面运行发生错误。';
+    var loc = (e && e.filename) ? ('\n出现位置：' + e.filename + (e.lineno ? (':' + e.lineno) : '')) : '';
+    fatal('运行错误：' + m, loc ? loc.replace(/^\n/, '') : '');
+  }, true);
+
+  /* Promise 未捕获异常（动态 import CDN 失败常走这里） */
+  w.addEventListener('unhandledrejection', function (e) {
+    var r = e && e.reason;
+    var m = (r && r.message) ? r.message : String(r || '未知的异步错误');
+    fatal('异步加载失败。', '原因：' + m + '\n可能是网络受限或 CDN 不可用，请联网后刷新重试。');
+  });
+
+  /* 覆盖层元素稍后解析，届时补写暂存消息 */
+  d.addEventListener('DOMContentLoaded', function () {
+    if (pending) { var p = pending; pending = null; apply(p[0], p[1]); }
+  });
+})(window, document);
+</script>
+
+<!-- 全屏画布：16:9 letterbox，渲染器按 clientWidth/Height 自适应 -->
+<canvas id="game-canvas"></canvas>
+
+<!-- ============================== 加载界面 ============================== -->
+<div id="screen-loading" class="screen active">
+  <div class="loading-wrap">
+    <div class="hud-frame loading-frame">
+      <div class="loading-title">正在加载战场资源</div>
+      <div class="loading-bar">
+        <div id="loading-fill"></div>
+      </div>
+      <div class="loading-meta">
+        <span id="loading-pct">0%</span>
+        <span id="loading-text">正在加载战场资源</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================== 主菜单 ================================ -->
+<div id="screen-menu" class="screen hidden">
+  <!-- CSS 动画夜景天际线 + 楼顶光柱 -->
+  <div class="skyline" aria-hidden="true">
+    <div class="sky-glow"></div>
+    <div class="buildings">
+      <i style="--x:2%;  --w:6%;  --h:46%; --d:4.4s"></i>
+      <i style="--x:9%;  --w:8%;  --h:64%; --d:6.1s"></i>
+      <i style="--x:18%; --w:5%;  --h:38%; --d:5.2s"></i>
+      <i style="--x:24%; --w:9%;  --h:72%; --d:3.8s"></i>
+      <i style="--x:34%; --w:6%;  --h:52%; --d:7.0s"></i>
+      <i style="--x:41%; --w:7%;  --h:60%; --d:4.9s"></i>
+      <i style="--x:49%; --w:5%;  --h:44%; --d:5.6s"></i>
+      <i style="--x:55%; --w:9%;  --h:78%; --d:6.6s"></i>
+      <i style="--x:65%; --w:6%;  --h:50%; --d:4.2s"></i>
+      <i style="--x:72%; --w:8%;  --h:66%; --d:5.9s"></i>
+      <i style="--x:81%; --w:5%;  --h:40%; --d:6.9s"></i>
+      <i style="--x:87%; --w:9%;  --h:58%; --d:4.6s"></i>
+    </div>
+    <div class="beam beam-a"></div>
+    <div class="beam beam-b"></div>
+  </div>
+
+  <div class="menu-wrap">
+    <div class="menu-title">
+      <h1>环太平洋 · 机甲对决</h1>
+      <p class="subtitle">PACIFIC RIM — MECHA COMBAT</p>
+    </div>
+    <nav class="menu-nav">
+      <button id="menu-start" class="menu-btn active">开始游戏</button>
+      <button id="menu-select" class="menu-btn">机甲选择</button>
+      <button id="menu-help" class="menu-btn">操作说明</button>
+    </nav>
+    <div class="menu-info">
+      <div class="info-row"><span class="info-label">难度</span><span id="menu-difficulty">普通</span></div>
+      <div class="info-row"><span class="info-label">控制器</span><span id="menu-controller">控制器：键盘模式</span></div>
+    </div>
+    <div class="menu-hint"><span data-prompt="menu"></span></div>
+  </div>
+</div>
+
+<!-- ============================== 选择界面 ============================== -->
+<div id="screen-select" class="screen hidden">
+  <div class="select-wrap">
+    <div class="select-head"><h2>机甲选择</h2></div>
+
+    <div class="select-grid">
+      <!-- 左列：玩家机甲 -->
+      <section class="select-col col-mecha">
+        <h3>玩家机甲</h3>
+        <div class="unit-name" id="select-mecha-name">游侠 · 赤色风暴</div>
+        <div class="unit-tag" id="select-mecha-tag">均衡型</div>
+        <p class="unit-desc" id="select-mecha-desc">第 5 代猎手机甲，双腕等离子链锯，攻守均衡、机动灵活。</p>
+        <div class="unit-stats" id="select-mecha-stats"></div>
+        <div class="unit-skills" id="select-mecha-skills"></div>
+        <ul class="unit-list" id="select-mecha-list"></ul>
+      </section>
+
+      <!-- 中列：VS + 3D 预览宿主（main.js 填充） -->
+      <section class="select-col col-center">
+        <div class="vs-badge" id="select-vs">VS</div>
+        <div id="select-preview"></div>
+      </section>
+
+      <!-- 右列：开菊兽 -->
+      <section class="select-col col-kaiju">
+        <h3>开菊兽</h3>
+        <div class="unit-name" id="select-kaiju-name">镰刃魔</div>
+        <div class="unit-tag" id="select-kaiju-tag">速攻型</div>
+        <p class="unit-desc" id="select-kaiju-desc">两足高速开菊兽，前肢双镰，习惯连续撕咬与突进扑击。</p>
+        <div class="unit-stats" id="select-kaiju-stats"></div>
+        <div class="unit-skills" id="select-kaiju-skills"></div>
+        <ul class="unit-list" id="select-kaiju-list"></ul>
+      </section>
+    </div>
+
+    <div class="select-footer">
+      <div class="select-diff"><span class="label">难度</span><span id="select-difficulty">普通</span></div>
+      <div id="select-prompts">
+        <span class="prompt-item"><span class="prompt-key" data-prompt="left"></span><span class="prompt-label">切换选择</span></span>
+        <span class="prompt-item"><span class="prompt-key" data-prompt="confirm"></span><span class="prompt-label">确认出击</span></span>
+        <span class="prompt-item"><span class="prompt-key" data-prompt="cancel"></span><span class="prompt-label">返回</span></span>
+      </div>
+      <div class="select-btns">
+        <button id="select-back" class="btn ghost">返回</button>
+        <button id="select-confirm" class="btn primary">确认出击</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================== 战斗 HUD ============================== -->
+<div id="screen-fight" class="screen hud hidden">
+  <div class="hud-top">
+    <!-- 玩家（左） -->
+    <div class="hud-side hud-left">
+      <div class="hud-name" id="p-name">游侠 · 赤色风暴</div>
+      <div class="bar hp-bar">
+        <div class="bar-track">
+          <div class="bar-fill hp" id="p-hp-fill"></div>
+          <div class="bar-segments" id="p-hp-segments"></div>
+          <div class="bar-value" id="p-hp">1000</div>
+        </div>
+      </div>
+      <div class="bar sub stamina-bar">
+        <div class="bar-track"><div class="bar-fill stamina" id="p-stamina-fill"></div></div>
+      </div>
+      <div class="bar sub energy-bar">
+        <div class="bar-track"><div class="bar-fill energy" id="p-energy-fill"></div></div>
+      </div>
+      <div class="hud-flags">
+        <span class="flag" id="p-ultimate-ready">必杀技就绪</span>
+        <span class="flag" id="p-blocking">格挡</span>
+        <span class="flag" id="p-stunned">眩晕</span>
+        <span class="flag" id="p-exhausted">力竭</span>
+      </div>
+    </div>
+
+    <!-- 中央：演出文字与连击 -->
+    <div class="hud-center">
+      <div class="center-text" id="center-text"></div>
+      <div class="combo-display" id="combo-display"></div>
+    </div>
+
+    <!-- 敌方（右） -->
+    <div class="hud-side hud-right">
+      <div class="hud-name" id="e-name">镰刃魔</div>
+      <div class="bar hp-bar">
+        <div class="bar-track">
+          <div class="bar-fill hp" id="e-hp-fill"></div>
+          <div class="bar-segments" id="e-hp-segments"></div>
+          <div class="bar-value" id="e-hp">900</div>
+        </div>
+      </div>
+      <div class="bar sub stamina-bar">
+        <div class="bar-track"><div class="bar-fill stamina" id="e-stamina-fill"></div></div>
+      </div>
+      <div class="bar sub stun-bar">
+        <div class="bar-track"><div class="bar-fill stun" id="e-stun-fill"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ultimate-banner" id="ultimate-banner"></div>
+  <div class="damage-layer" id="damage-layer"></div>
+  <div class="fight-prompts" id="fight-prompts">
+    <span class="prompt-item"><span class="prompt-key" data-prompt="light"></span><span class="prompt-label">轻攻</span></span>
+    <span class="prompt-item"><span class="prompt-key" data-prompt="heavy"></span><span class="prompt-label">重攻</span></span>
+    <span class="prompt-item"><span class="prompt-key" data-prompt="skill"></span><span class="prompt-label">技能</span></span>
+    <span class="prompt-item"><span class="prompt-key" data-prompt="ultimate"></span><span class="prompt-label">必杀</span></span>
+    <span class="prompt-item"><span class="prompt-key" data-prompt="block"></span><span class="prompt-label">格挡</span></span>
+    <span class="prompt-item"><span class="prompt-key" data-prompt="dodge"></span><span class="prompt-label">闪避</span></span>
+    <span class="prompt-item"><span class="prompt-key" data-prompt="pause"></span><span class="prompt-label">暂停</span></span>
+  </div>
+</div>
+
+<!-- ============================== 暂停界面 ============================== -->
+<div id="screen-pause" class="screen hidden">
+  <div class="pause-backdrop"></div>
+  <div class="panel pause-panel">
+    <div class="panel-title">暂停</div>
+    <ul class="pause-list" id="pause-list">
+      <li><button id="pause-resume" class="pause-item active">继续战斗</button></li>
+      <li><button id="pause-restart" class="pause-item">重新开始</button></li>
+      <li><button id="pause-menu" class="pause-item">返回主菜单</button></li>
+    </ul>
+    <div class="pause-hint">
+      <span class="prompt-item"><span class="prompt-key" data-prompt="menu"></span></span>
+      <span class="prompt-item"><span class="prompt-key" data-prompt="pause"></span><span class="prompt-label">继续</span></span>
+    </div>
+  </div>
+</div>
+
+<!-- ============================== 结算界面 ============================== -->
+<div id="screen-result" class="screen hidden">
+  <div class="panel result-panel">
+    <div class="result-title" id="result-title">胜利</div>
+    <div class="result-stats" id="result-stats"></div>
+    <div class="result-btns">
+      <button id="result-rematch" class="btn primary">再战一局</button>
+      <button id="result-menu" class="btn ghost">返回主菜单</button>
+    </div>
+    <div class="result-hint">
+      <span class="prompt-item"><span class="prompt-key" data-prompt="confirm"></span><span class="prompt-label">确认</span></span>
+      <span class="prompt-item"><span class="prompt-key" data-prompt="cancel"></span><span class="prompt-label">返回</span></span>
+    </div>
+  </div>
+</div>
+
+<!-- ============================== 帮助界面 ============================== -->
+<div id="screen-help" class="screen hidden">
+  <div class="panel help-wrap">
+    <div class="panel-title">操作说明</div>
+    <div id="help-body"></div>
+    <button id="help-back" class="btn primary">返回</button>
+  </div>
+</div>
+
+<!-- 全屏装饰特效：暗角 + 扫描线（不拦截事件） -->
+<div class="fx fx-vignette" aria-hidden="true"></div>
+<div class="fx fx-scanlines" aria-hidden="true"></div>
+
+<!-- ============================ 错误覆盖层 ============================= -->
+<div id="error-overlay" class="hidden">
+  <div class="error-box">
+    <div class="error-title">启动失败</div>
+    <pre id="error-message"></pre>
+  </div>
+</div>
+
+<!-- =========================================================================
+     物理引擎：Ammo.js asm.js 构建（单文件、无独立 .wasm，双击亦可加载）
+     必须先于所有本地游戏脚本加载
+     ========================================================================= -->
+<script src="https://cdn.jsdelivr.net/gh/kripken/ammo.js@master/builds/ammo.js"></script>
+
+<!-- =========================================================================
+     本地游戏脚本：按固定顺序以经典 <script> 加载（非 module）
+     ========================================================================= -->
+<script src="js/config.js"></script>
+<script src="js/combat.js"></script>
+<script src="js/models.js"></script>
+<script src="js/physics.js"></script>
+<script src="js/input.js"></script>
+<script src="js/renderer.js"></script>
+<script src="js/player.js"></script>
+<script src="js/enemy.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+
+<!-- =========================================================================
+     启动模块：最后执行。动态 import three 与 addons，注入 GAME.Main.boot。
+     使用动态 import（而非静态 import）以便在 CDN 失败时被 catch 捕获并
+     显示 #error-overlay，而不是让整块模块加载失败导致白屏。
+     ========================================================================= -->
+<script type="module">
+(function () {
+  'use strict';
+
+  var fatal = window.__GAME_FATAL__ || function (m, d) { alert(m + (d ? ('\n' + d) : '')); };
+
+  Promise.all([
+    import('three'),
+    import('three/addons/loaders/GLTFLoader.js'),
+    import('three/addons/postprocessing/EffectComposer.js'),
+    import('three/addons/postprocessing/RenderPass.js'),
+    import('three/addons/postprocessing/UnrealBloomPass.js'),
+    import('three/addons/postprocessing/OutputPass.js'),
+    import('three/addons/postprocessing/ShaderPass.js'),
+    import('three/addons/shaders/CopyShader.js'),
+    import('three/addons/postprocessing/FilmPass.js')
+  ]).then(function (m) {
+    var THREE = m[0];
+
+    var addons = {
+      GLTFLoader: m[1] && m[1].GLTFLoader,
+      EffectComposer: m[2] && m[2].EffectComposer,
+      RenderPass: m[3] && m[3].RenderPass,
+      UnrealBloomPass: m[4] && m[4].UnrealBloomPass,
+      OutputPass: m[5] && m[5].OutputPass,
+      ShaderPass: m[6] && m[6].ShaderPass,
+      CopyShader: m[7] && m[7].CopyShader,
+      FilmPass: m[8] && m[8].FilmPass
+    };
+
+    /* 用 CONFIG.ui.texts.title 覆盖页面标题（若配置已加载） */
+    try {
+      var cfg = window.GAME && window.GAME.CONFIG;
+      var t = cfg && cfg.ui && cfg.ui.texts && cfg.ui.texts.title;
+      if (t) document.title = t;
+    } catch (e) { /* 忽略：标题非关键 */ }
+
+    if (!window.GAME || !window.GAME.Main || typeof window.GAME.Main.boot !== 'function') {
+      throw new Error('主控脚本 GAME.Main 未就绪（js/main.js 未正确加载）');
+    }
+
+    return window.GAME.Main.boot({ three: THREE, addons: addons });
+  }).catch(function (err) {
+    var msg = (err && err.message) ? err.message : String(err || '未知错误');
+    fatal(
+      '三维引擎加载失败，游戏无法启动。',
+      '原因：' + msg +
+      '\n请确认可以访问 jsDelivr CDN（three 0.170.0 / ammo.js），或连接网络后刷新重试。'
+    );
+  });
+})();
+</script>
+
+</body>
+</html>
