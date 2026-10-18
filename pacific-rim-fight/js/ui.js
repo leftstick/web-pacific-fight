@@ -700,6 +700,25 @@
     wireButton('select-confirm', function () { confirmSelect(); });
     wireButton('select-back', function () { emit('ui:main-menu'); });
     wireButton('select-difficulty', function () { cycleDifficulty(1); });
+
+    /* P3：画质切换按钮 */
+    var qRow = D('quality-row');
+    if (qRow) {
+      var qBtns = qRow.querySelectorAll('.quality-btn');
+      for (var qi = 0; qi < qBtns.length; qi++) {
+        (function (btn) {
+          btn.addEventListener('click', function () {
+            var lv = btn.getAttribute('data-quality');
+            UI.setQuality(lv);
+          });
+        })(qBtns[qi]);
+      }
+    }
+    /* P3：后处理效果开关 */
+    var fxBloom = D('fx-bloom'), fxVig = D('fx-vignette'), fxFilm = D('fx-film');
+    if (fxBloom) fxBloom.addEventListener('change', function () { UI.setPostFx({ bloom: fxBloom.checked }); });
+    if (fxVig) fxVig.addEventListener('change', function () { UI.setPostFx({ vignette: fxVig.checked }); });
+    if (fxFilm) fxFilm.addEventListener('change', function () { UI.setPostFx({ filmGrain: fxFilm.checked }); });
   }
 
   function subscribe() {
@@ -736,11 +755,22 @@
       if (p) UI.showUltimateBanner(p.name, p.desc);
     });
 
-    /* 设备切换：按键提示 + 控制器状态 + 帮助表高亮 */
+    /* 设备切换：按键提示 + 控制器状态 + 帮助表高亮 + 底部设备徽章 */
     U.bus.on('input:device', function () {
       UI.refreshPrompts();
       UI.setControllerStatus();
       updateHelpDevice(UI.input && UI.input.device);
+      UI._updateDeviceBadge();
+    });
+
+    /* 命中：伤害数字 + 连击 + 血条闪白 */
+    U.bus.on('combat:hit', function (r) {
+      if (!r) return;
+      UI.showDamageNumber(r.position, r.damage, { blocked: r.blocked, critical: r.critical });
+      var hits = (r.attacker && r.attacker.comboHits) || 0;
+      if (hits >= 2) UI.showCombo(hits, r.damage);
+      /* 受击方血条闪白 */
+      if (r.defender) UI.flashBar(r.defender.faction === 'mecha' ? 'p' : 'e');
     });
   }
 
@@ -795,6 +825,9 @@
         setSelectFocus('mecha');
 
         UI.refreshPrompts();
+        UI._updateDeviceBadge();
+        UI.refreshQualityUI();
+        UI.refreshFxUI();
         UI.showScreen('loading');
         subscribe();
       } catch (e) {
@@ -818,6 +851,7 @@
       UI.currentScreen = (name && SCREEN_IDS[name]) ? name : null;
       UI._setHudVisible(UI.currentScreen === 'fight');
       if (UI.currentScreen === 'menu' || UI.currentScreen === 'select') UI.refreshPrompts();
+      if (UI.currentScreen === 'pause') { UI.refreshQualityUI(); UI.refreshFxUI(); }
       return UI.currentScreen;
     },
 
@@ -988,6 +1022,64 @@
         text = connected ? UI_CFG.texts.controllerPad : UI_CFG.texts.controllerKb;
       }
       setText(D('menu-controller'), text);
+      UI._updateDeviceBadge();
+    },
+
+    /* P3：底部操作提示面板的设备模式徽章 */
+    _updateDeviceBadge: function () {
+      var badge = D('device-badge');
+      if (!badge) return;
+      var dev = (UI.input && UI.input.device) || 'keyboard';
+      var label = (dev === 'gamepad') ? (UI_CFG.texts.controllerPad || '手柄模式') : (UI_CFG.texts.controllerKb || '键盘模式');
+      setText(badge, label);
+    },
+
+    /* P3：受击时血条闪白（不修改数值，仅视觉反馈） */
+    flashBar: function (side) {
+      var fill = D((side === 'e' ? 'e' : 'p') + '-hp-fill');
+      if (!fill) return;
+      fill.classList.remove('flash');
+      /* 强制重排以重启动画 */
+      void fill.offsetWidth;
+      fill.classList.add('flash');
+    },
+
+    /* P3：设置画质（委托 Renderer，再刷新按钮高亮） */
+    setQuality: function (level) {
+      var R = UI.renderer;
+      if (R && typeof R.setQuality === 'function') {
+        try { R.setQuality(level); } catch (e) { console.warn('[UI] setQuality 失败', e); }
+      }
+      UI.refreshQualityUI();
+    },
+
+    /* P3：切换后处理效果 */
+    setPostFx: function (opts) {
+      var R = UI.renderer;
+      if (R && typeof R.setPostFx === 'function') {
+        try { R.setPostFx(opts); } catch (e) { console.warn('[UI] setPostFx 失败', e); }
+      }
+      UI.refreshFxUI();
+    },
+
+    /* P3：根据当前画质刷新按钮高亮 */
+    refreshQualityUI: function () {
+      var R = UI.renderer;
+      var cur = (R && typeof R.getQuality === 'function') ? R.getQuality() : (CONFIG.render.quality || 'high');
+      var qRow = D('quality-row');
+      if (!qRow) return;
+      var btns = qRow.querySelectorAll('.quality-btn');
+      for (var i = 0; i < btns.length; i++) {
+        btns[i].classList.toggle('active', btns[i].getAttribute('data-quality') === cur);
+      }
+    },
+
+    /* P3：根据当前后处理开关刷新复选框 */
+    refreshFxUI: function () {
+      var pf = (CONFIG.render && CONFIG.render.postFx) || {};
+      var cb = D('fx-bloom'); if (cb) cb.checked = !!pf.bloom;
+      var cv = D('fx-vignette'); if (cv) cv.checked = !!pf.vignette;
+      var cf = D('fx-film'); if (cf) cf.checked = !!pf.filmGrain;
     },
 
     /* =======================================================================

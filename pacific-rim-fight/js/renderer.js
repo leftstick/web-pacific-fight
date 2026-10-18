@@ -136,6 +136,10 @@
       R._shakeSeed = Math.random() * 100;
 
       R.buildScene();
+
+      /* P3：启动时按 RENDER.quality 应用画质（auto → 自动检测） */
+      R.setQuality(RENDER.quality || 'auto');
+
       return R.renderer;
     },
 
@@ -241,8 +245,8 @@
       var pos = R._pos(position);
       var fb = R._facingBias(facing);
 
-      /* 火花迸射（背击更爆裂） */
-      var n = lv.sparks + (fb > 0 ? 6 : 0);
+      /* 火花迸射（背击更爆裂；P3：按画质 particleScale 缩放数量） */
+      var n = Math.round((lv.sparks + (fb > 0 ? 6 : 0)) * (R._particleScale != null ? R._particleScale : 1));
       for (var i = 0; i < n; i++) {
         var sk = R._acquire(R._sparks);
         if (!sk) break;
@@ -625,14 +629,9 @@
       var h = Math.max(1, height || (R.renderer && R.renderer.domElement.clientHeight) || global.innerHeight || 720);
 
       if (R.camera) { R.camera.aspect = w / h; R.camera.updateProjectionMatrix(); }
-      if (R.renderer) R.renderer.setSize(w, h, false);
-
-      var scale = RENDER.resolutionScale || 1;
-      var bw = Math.max(1, Math.round(w * scale));
-      var bh = Math.max(1, Math.round(h * scale));
-      if (R.composer) R.composer.setSize(bw, bh);   // 会同步各 pass 尺寸
-      if (R._bloomPass && R._bloomPass.setSize) R._bloomPass.setSize(bw, bh);
       if (R._size) R._size.set(w, h);
+      /* P3：统一走 _applyResolution（像素比 × resolutionScale，自动同步 composer） */
+      R._applyResolution();
       return R;
     },
 
@@ -972,37 +971,137 @@
       };
     },
 
-    /* 后处理链：RenderPass -> UnrealBloom -> 内联 ShaderPass 暗角 -> FilmPass 颗粒 -> OutputPass */
+    /* 后处理链：RenderPass -> UnrealBloom -> 内联 ShaderPass 暗角 -> FilmPass 颗粒 -> OutputPass
+     *   P3：每个 pass 是否启用 = 画质预设 enabled AND 用户运行时开关 RENDER.postFx.*
+     * ==================================================================== */
     _buildPost: function () {
       var a = ADDONS || {};
+      /* 有效开关：预设 enabled && 用户运行时开关 */
+      var bloomOn = !!(RENDER.bloom.enabled && RENDER.postFx.bloom);
+      var vignetteOn = !!(RENDER.vignette.enabled && RENDER.postFx.vignette);
+      var filmOn = !!(RENDER.filmGrain.enabled && RENDER.postFx.filmGrain);
+
       var need = ['EffectComposer', 'RenderPass'];
-      if (RENDER.bloom.enabled) need.push('UnrealBloomPass');
-      if (RENDER.vignette.enabled) need.push('ShaderPass');
-      if (RENDER.filmGrain.enabled) need.push('FilmPass');
+      if (bloomOn) need.push('UnrealBloomPass');
+      if (vignetteOn) need.push('ShaderPass');
+      if (filmOn) need.push('FilmPass');
       need.push('OutputPass');
 
       var miss = [];
       for (var i = 0; i < need.length; i++) if (!a[need[i]]) miss.push(need[i]);
       if (miss.length) { R._postFallback('缺少 ' + miss.join('/')); return; }
 
+      /* 重建前释放旧 composer */
+      if (R.composer && R.composer.dispose) { try { R.composer.dispose(); } catch (e) {} }
+      R._bloomPass = null; R._vignettePass = null;
+
       var composer = new a.EffectComposer(R.renderer);
       composer.addPass(new a.RenderPass(R.scene, R.camera));
 
-      if (RENDER.bloom.enabled) {
+      if (bloomOn) {
         var res = new THREE.Vector2(R._size ? R._size.x : 1, R._size ? R._size.y : 1);
         R._bloomPass = new a.UnrealBloomPass(res, RENDER.bloom.strength, RENDER.bloom.radius, RENDER.bloom.threshold);
         composer.addPass(R._bloomPass);
       }
-      if (RENDER.vignette.enabled) {
+      if (vignetteOn) {
         R._vignettePass = new a.ShaderPass(R._vignetteShaderDef());
         composer.addPass(R._vignettePass);
       }
-      if (RENDER.filmGrain.enabled) {
+      if (filmOn) {
         composer.addPass(new a.FilmPass(RENDER.filmGrain.intensity, false));
       }
       composer.addPass(new a.OutputPass());
       R.composer = composer;
+
+      /* 同步尺寸 */
+      if (R._size) R.composer.setSize(R._size.x, R._size.y);
     },
+
+    /* P3：自动检测画质等级（low / medium / high） */
+    detectQuality: function () {
+      var aq = RENDER.autoQuality || {};
+      var dpr = (typeof global !== 'undefined' && global.devicePixelRatio) || 1;
+      var w = (typeof global !== 'undefined' && global.innerWidth) || 1280;
+      var h = (typeof global !== 'undefined' && global.innerHeight) || 720;
+      var area = w * h;
+      var isMobile = (typeof navigator !== 'undefined' && /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '')) ||
+        (typeof global !== 'undefined' && global.ontouchstart !== undefined && area < (1280 * 800));
+
+      if (isMobile) return (aq.mobileForceLow !== false) ? 'low' : 'medium';
+      if (dpr <= (aq.lowDprThreshold || 1.5) && area <= (aq.lowScreenArea || (1280 * 720))) return 'low';
+      if (area <= (1366 * 768)) return 'medium';
+      return 'high';
+    },
+
+    /* P3：应用画质预设（合并到 RENDER 并重建后处理 / 阴影） */
+    setQuality: function (level) {
+      var presets = RENDER.qualityPresets || {};
+      var preset = presets[level];
+      if (!preset) {
+        /* auto → 检测 */
+        level = R.detectQuality();
+        preset = presets[level] || presets.high;
+      }
+      RENDER.quality = level;
+      RENDER._appliedQuality = level;
+
+      /* 合并预设到运行时参数（浅合并子对象） */
+      var merge = function (dst, src) {
+        if (!src) return;
+        for (var k in src) {
+          if (!src.hasOwnProperty(k)) continue;
+          if (src[k] && typeof src[k] === 'object' && !Array.isArray(src[k])) {
+            if (!dst[k]) dst[k] = {};
+            merge(dst[k], src[k]);
+          } else {
+            dst[k] = src[k];
+          }
+        }
+      };
+      merge(RENDER, preset);
+
+      /* 粒子 / 雨滴规模（广播给特效系统用） */
+      R._particleScale = preset.particleScale != null ? preset.particleScale : 1;
+      R._rainScale = preset.rainScale != null ? preset.rainScale : 1;
+
+      /* 重建阴影设置 */
+      if (R.renderer) {
+        R.renderer.shadowMap.enabled = !!RENDER.shadows.enabled;
+        R.renderer.shadowMap.type = R._shadowType(RENDER.shadows.type);
+      }
+
+      /* 重建后处理链 */
+      R._buildPost();
+
+      /* 同步像素比 / 分辨率 */
+      R._applyResolution();
+
+      if (U && U.bus && U.bus.emit) U.bus.emit('renderer:quality', { level: level });
+      return level;
+    },
+
+    /* P3：运行时切换单个后处理效果（不重建画质预设） */
+    setPostFx: function (opts) {
+      opts = opts || {};
+      if (opts.bloom !== undefined) RENDER.postFx.bloom = !!opts.bloom;
+      if (opts.vignette !== undefined) RENDER.postFx.vignette = !!opts.vignette;
+      if (opts.filmGrain !== undefined) RENDER.postFx.filmGrain = !!opts.filmGrain;
+      R._buildPost();
+      if (U && U.bus && U.bus.emit) U.bus.emit('renderer:postfx', { postFx: RENDER.postFx });
+    },
+
+    /* P3：应用分辨率缩放（像素比 × resolutionScale） */
+    _applyResolution: function () {
+      if (!R.renderer || !R._size) return;
+      var base = Math.min((typeof global !== 'undefined' && global.devicePixelRatio) || 1, RENDER.pixelRatioCap);
+      var scale = RENDER.resolutionScale != null ? RENDER.resolutionScale : 1;
+      R.renderer.setPixelRatio(Math.max(0.5, base * scale));
+      R.renderer.setSize(R._size.x, R._size.y, false);
+      if (R.composer && R.composer.setSize) R.composer.setSize(R._size.x, R._size.y);
+    },
+
+    /* P3：当前画质等级（auto 模式返回已应用的实际等级） */
+    getQuality: function () { return RENDER._appliedQuality || RENDER.quality || 'high'; },
 
     /* addon 缺失：回退到 renderer.render(scene, camera)，仅告警一次 */
     _postFallback: function (msg) {

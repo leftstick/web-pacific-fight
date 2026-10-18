@@ -718,7 +718,66 @@
     fog: { enabled: true, near: 40, far: 340, density: 0.0038 },
     groundFogPass: { enabled: true, height: 7, opacity: 0.55 },
     maxLights: { point: 6, spot: 3 },
-    resolutionScale: 1.0
+    resolutionScale: 1.0,
+
+    /* =======================================================================
+     * P3：画质三档预设（low / medium / high）+ 自动降级
+     *   setQuality(level) 会把对应预设合并到上面的渲染参数，再重建后处理/阴影。
+     *   auto 模式由 Renderer.detectQuality() 根据设备能力选择。
+     * ==================================================================== */
+    quality: 'auto',      // 'auto' | 'low' | 'medium' | 'high'
+    qualityPresets: {
+      high: {
+        bloom: { enabled: true, strength: 0.70, radius: 0.7, threshold: 0.68 },
+        shadows: { enabled: true, type: 'PCFSoft', mapSize: 2048, radius: 4 },
+        vignette: { enabled: true, offset: 1.05, darkness: 0.62 },
+        filmGrain: { enabled: true, intensity: 0.06 },
+        fog: { enabled: true, density: 0.0038 },
+        envMap: { enabled: true, intensity: 0.62 },
+        resolutionScale: 1.0,
+        antialias: true,
+        particleScale: 1.0,          // 特效粒子数量乘数
+        rainScale: 1.0
+      },
+      medium: {
+        bloom: { enabled: true, strength: 0.45, radius: 0.5, threshold: 0.78 },
+        shadows: { enabled: true, type: 'PCFSoft', mapSize: 1024, radius: 3 },
+        vignette: { enabled: true, offset: 1.1, darkness: 0.55 },
+        filmGrain: { enabled: true, intensity: 0.04 },
+        fog: { enabled: true, density: 0.0032 },
+        envMap: { enabled: true, intensity: 0.5 },
+        resolutionScale: 0.85,
+        antialias: true,
+        particleScale: 0.7,
+        rainScale: 0.7
+      },
+      low: {
+        bloom: { enabled: false, strength: 0.3, radius: 0.4, threshold: 0.85 },
+        shadows: { enabled: false, type: 'Basic', mapSize: 512, radius: 1 },
+        vignette: { enabled: true, offset: 1.2, darkness: 0.5 },
+        filmGrain: { enabled: false, intensity: 0.03 },
+        fog: { enabled: true, density: 0.0028 },
+        envMap: { enabled: false, intensity: 0.4 },
+        resolutionScale: 0.65,
+        antialias: false,
+        particleScale: 0.4,
+        rainScale: 0.4
+      }
+    },
+
+    /* P3：后处理效果运行时开关（用户可在暂停菜单单独切换，独立于画质预设） */
+    postFx: {
+      bloom: true,
+      vignette: true,
+      filmGrain: true
+    },
+
+    /* P3：自动降级判定阈值（detectQuality 用） */
+    autoQuality: {
+      lowDprThreshold: 1.5,          // devicePixelRatio <= 此值 且 移动端 → low
+      lowScreenArea: 1280 * 720,     // 屏幕面积 <= 此值 → 倾向 low
+      mobileForceLow: true           // 移动端强制 low（可改 false 走 medium）
+    }
   };
 
   /* ===========================================================================

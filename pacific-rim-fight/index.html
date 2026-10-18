@@ -196,14 +196,18 @@ button { font-family: inherit; }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 26px;
-  height: 22px;
-  padding: 0 8px;
+  min-width: 28px;
+  height: 24px;
+  padding: 0 9px;
   color: var(--cyan);
   font-weight: 700;
+  font-size: clamp(11px, 0.9vw, 13px);
   border: 1px solid var(--cyan-dim);
-  background: rgba(111, 208, 255, 0.08);
+  border-top: 1px solid rgba(111, 208, 255, 0.5);
+  background: linear-gradient(180deg, rgba(111, 208, 255, 0.16), rgba(111, 208, 255, 0.04));
   clip-path: polygon(5px 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%, 0 5px);
+  box-shadow: inset 0 0 8px rgba(111, 208, 255, 0.18), 0 0 6px rgba(111, 208, 255, 0.15);
+  text-shadow: 0 0 6px rgba(111, 208, 255, 0.6);
 }
 .prompt-label { color: var(--muted); }
 
@@ -559,32 +563,55 @@ button { font-family: inherit; }
 .bar { position: relative; width: 100%; }
 .bar-track {
   position: relative;
-  height: 16px;
-  background: rgba(4, 10, 13, 0.92);
+  height: 18px;
+  background: linear-gradient(180deg, rgba(4, 10, 13, 0.95), rgba(2, 6, 8, 0.98));
   border: 1px solid var(--cyan-dim);
+  border-top: 1px solid rgba(111, 208, 255, 0.45);
   overflow: hidden;
-  clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px);
+  clip-path: polygon(9px 0, 100% 0, 100% calc(100% - 9px), calc(100% - 9px) 100%, 0 100%, 0 9px);
+  box-shadow: inset 0 0 12px rgba(0,0,0,0.7), 0 0 10px rgba(111, 208, 255, 0.12);
 }
-.hud-right .bar-track { border-color: var(--amber-dim); }
+.hud-right .bar-track { border-color: var(--amber-dim); border-top-color: rgba(255, 200, 107, 0.45); box-shadow: inset 0 0 12px rgba(0,0,0,0.7), 0 0 10px rgba(255, 200, 107, 0.12); }
+
+/* 血条“骨架”刻度线（暗色分段槽） */
+.bar-segments {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  pointer-events: none;
+  gap: 2px;
+  padding: 0 2px;
+}
+.bar-segments .seg {
+  flex: 1;
+  background: rgba(111, 208, 255, 0.06);
+  border-left: 1px solid rgba(0,0,0,0.6);
+  border-right: 1px solid rgba(0,0,0,0.6);
+}
+.hud-right .bar-segments .seg { background: rgba(255, 200, 107, 0.06); }
+
 .bar-fill {
   position: absolute;
   left: 0; top: 0; bottom: 0;
   width: 0%;
   transition: width 0.18s linear;
+  box-shadow: 0 0 14px currentColor;
 }
 /* 敌方血条从右向左消减：fill 锚定右侧，避免翻转容器导致数字/刻度镜像 */
 .hud-right .bar-fill { left: auto; right: 0; }
-.bar-fill.hp { background: linear-gradient(180deg, #bff3ff, #3a9fd0); }
-.hud-right .bar-fill.hp { background: linear-gradient(180deg, #ffd9a0, #c98a3a); }
-.bar-fill.hp.low { background: linear-gradient(180deg, #ff9a86, #c93a24); animation: hp-low 0.32s steps(2, end) infinite; }
-@keyframes hp-low { 0% { filter: brightness(1.25); } 100% { filter: brightness(0.85); } }
-.bar-segments {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: repeating-linear-gradient(90deg, rgba(0,0,0,0) 0 calc(100% / 12 - 2px), rgba(3, 8, 11, 0.9) calc(100% / 12 - 2px) calc(100% / 12));
+.bar-fill.hp { background: linear-gradient(180deg, #d8f7ff 0%, #5fb8e8 45%, #2f86b8 100%); color: #6fd0ff; }
+.hud-right .bar-fill.hp { background: linear-gradient(180deg, #ffe6c0 0%, #e8a85a 45%, #b8762f 100%); color: #ffc86b; }
+.bar-fill.hp.low { background: linear-gradient(180deg, #ffb8a8, #c93a24); color: #ff6a52; animation: hp-low 0.32s steps(2, end) infinite; }
+@keyframes hp-low { 0% { filter: brightness(1.3); } 100% { filter: brightness(0.85); } }
+
+/* 受击闪白：在 fill 上叠加一层白闪后淡出 */
+.bar-fill.flash::after {
+  content: ""; position: absolute; inset: 0;
+  background: #fff;
+  animation: bar-flash 0.22s ease-out forwards;
 }
-.hud-right .bar-segments { background: repeating-linear-gradient(270deg, rgba(0,0,0,0) 0 calc(100% / 12 - 2px), rgba(3, 8, 11, 0.9) calc(100% / 12 - 2px) calc(100% / 12)); }
+@keyframes bar-flash { 0% { opacity: 0.85; } 100% { opacity: 0; } }
+
 .bar-value {
   position: absolute;
   top: 50%;
@@ -593,29 +620,34 @@ button { font-family: inherit; }
   font-size: clamp(10px, 0.85vw, 12px);
   font-weight: 700;
   letter-spacing: 0.06em;
-  color: #dff6ff;
-  text-shadow: 0 0 6px rgba(0,0,0,0.9);
+  color: #fff;
+  text-shadow: 0 0 6px rgba(0,0,0,0.95), 0 0 2px rgba(0,0,0,0.95);
+  z-index: 2;
 }
-.bar.sub .bar-track { height: 9px; border-color: rgba(111, 208, 255, 0.18); }
-.hud-right .bar.sub .bar-track { border-color: rgba(255, 200, 107, 0.18); }
-.bar-fill.stamina { background: linear-gradient(180deg, #c4ffe9, #2f9c7a); }
-.bar-fill.energy { background: linear-gradient(180deg, #ffe3b3, #d98a2a); }
-.bar-fill.stun { background: linear-gradient(180deg, #ffb0a2, #b73b2a); }
+.bar.sub .bar-track { height: 8px; border-color: rgba(111, 208, 255, 0.22); border-top-color: rgba(111, 208, 255, 0.3); box-shadow: inset 0 0 8px rgba(0,0,0,0.6); }
+.hud-right .bar.sub .bar-track { border-color: rgba(255, 200, 107, 0.22); border-top-color: rgba(255, 200, 107, 0.3); }
+.bar-fill.stamina { background: linear-gradient(180deg, #d6ffe9, #3fc49a); color: #69ffc8; }
+.bar-fill.energy { background: linear-gradient(180deg, #ffe9b8, #e89838); color: #ffc86b; }
+.bar-fill.stun { background: linear-gradient(180deg, #ffc4b8, #c44232); color: #ff6a52; }
 
-.hud-flags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.hud-flags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 .hud-right .hud-flags { justify-content: flex-end; }
 .flag {
   display: none;
-  padding: 2px 9px;
-  font-size: clamp(10px, 0.85vw, 12px);
-  letter-spacing: 0.08em;
+  padding: 2px 10px;
+  font-size: clamp(10px, 0.82vw, 12px);
+  letter-spacing: 0.1em;
   border: 1px solid var(--cyan-dim);
   color: var(--cyan);
-  background: rgba(111, 208, 255, 0.08);
+  background: rgba(111, 208, 255, 0.10);
+  clip-path: polygon(5px 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%, 0 5px);
+  text-shadow: 0 0 8px rgba(111, 208, 255, 0.5);
 }
-.flag.active { display: inline-block; }
-#p-ultimate-ready.active { color: var(--amber); border-color: var(--amber); box-shadow: 0 0 12px rgba(255, 200, 107, 0.5); }
-#p-stunned.active, #p-exhausted.active { color: var(--danger); border-color: rgba(255, 106, 82, 0.6); background: rgba(255, 106, 82, 0.10); }
+.flag.active { display: inline-block; animation: flag-in 0.25s ease-out; }
+@keyframes flag-in { 0% { transform: scaleY(0); opacity: 0; } 100% { transform: scaleY(1); opacity: 1; } }
+#p-ultimate-ready.active { color: var(--amber); border-color: var(--amber); background: rgba(255, 200, 107, 0.14); box-shadow: 0 0 14px rgba(255, 200, 107, 0.5); text-shadow: 0 0 8px rgba(255, 200, 107, 0.6); animation: ult-pulse 1.1s ease-in-out infinite; }
+@keyframes ult-pulse { 0%,100% { box-shadow: 0 0 10px rgba(255, 200, 107, 0.4); } 50% { box-shadow: 0 0 20px rgba(255, 200, 107, 0.75); } }
+#p-stunned.active, #p-exhausted.active { color: var(--danger); border-color: rgba(255, 106, 82, 0.6); background: rgba(255, 106, 82, 0.12); text-shadow: 0 0 8px rgba(255, 106, 82, 0.5); }
 
 .hud-center { flex: 1; text-align: center; padding-top: 1vh; }
 .center-text {
@@ -668,7 +700,7 @@ button { font-family: inherit; }
 .damage-layer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
 
 .fight-prompts {
-  position: absolute;
+  position: fixed;
   left: 50%;
   bottom: 2vh;
   transform: translateX(-50%);
@@ -676,11 +708,38 @@ button { font-family: inherit; }
   flex-wrap: wrap;
   gap: clamp(8px, 1.3vw, 18px);
   justify-content: center;
-  padding: 8px 16px;
-  background: rgba(5, 12, 16, 0.55);
-  border: 1px solid rgba(111, 208, 255, 0.14);
-  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+  align-items: center;
+  padding: 10px 20px;
+  background: linear-gradient(180deg, rgba(5, 12, 16, 0.72), rgba(4, 9, 12, 0.85));
+  border: 1px solid rgba(111, 208, 255, 0.20);
+  border-top: 1px solid rgba(111, 208, 255, 0.42);
+  clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+  box-shadow: 0 0 24px rgba(0,0,0,0.6), inset 0 0 18px rgba(111, 208, 255, 0.06);
+  z-index: 40;
 }
+/* 设备模式指示器（键盘 / 手柄） */
+.fight-prompts .device-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 10px;
+  font-size: clamp(10px, 0.8vw, 12px);
+  letter-spacing: 0.1em;
+  color: var(--teal);
+  border: 1px solid rgba(105, 255, 200, 0.4);
+  background: rgba(105, 255, 200, 0.08);
+  clip-path: polygon(5px 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%, 0 5px);
+  text-shadow: 0 0 6px rgba(105, 255, 200, 0.5);
+}
+.fight-prompts .device-badge::before {
+  content: "";
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--teal);
+  box-shadow: 0 0 6px var(--teal);
+  animation: dev-dot 1.6s ease-in-out infinite;
+}
+@keyframes dev-dot { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
 
 /* ---- ⑨ 暂停界面 -------------------------------------------------------- */
 .pause-backdrop {
@@ -729,6 +788,75 @@ button { font-family: inherit; }
   padding-top: 14px;
   border-top: 1px solid rgba(111, 208, 255, 0.12);
 }
+
+/* ---- P3：暂停菜单中的画质 / 后处理设置 ---- */
+.settings-group {
+  margin: 14px 0 4px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(111, 208, 255, 0.10);
+}
+.settings-label {
+  font-size: clamp(11px, 0.95vw, 13px);
+  letter-spacing: 0.14em;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.quality-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.quality-btn {
+  flex: 1;
+  min-width: 56px;
+  padding: 7px 0;
+  cursor: pointer;
+  font-size: clamp(12px, 1.05vw, 14px);
+  letter-spacing: 0.1em;
+  color: var(--text);
+  background: linear-gradient(180deg, rgba(111,208,255,0.06), rgba(111,208,255,0.02));
+  border: 1px solid rgba(111, 208, 255, 0.22);
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+  transition: color 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+}
+.quality-btn:hover { border-color: var(--cyan); color: #eafaff; }
+.quality-btn.active {
+  color: var(--cyan);
+  border-color: var(--cyan);
+  background: linear-gradient(180deg, rgba(111,208,255,0.22), rgba(111,208,255,0.06));
+  box-shadow: inset 0 0 12px rgba(111, 208, 255, 0.28), 0 0 10px rgba(111, 208, 255, 0.25);
+}
+.fx-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.fx-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  padding: 5px 10px;
+  font-size: clamp(11px, 0.95vw, 13px);
+  color: var(--muted);
+  border: 1px solid rgba(111, 208, 255, 0.18);
+  background: rgba(111, 208, 255, 0.04);
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+  transition: color 0.16s ease, border-color 0.16s ease;
+}
+.fx-toggle input { display: none; }
+.fx-toggle span::before {
+  content: "▢";
+  margin-right: 6px;
+  color: var(--cyan-dim);
+}
+.fx-toggle input:checked + span { color: var(--cyan); }
+.fx-toggle input:checked + span::before {
+  content: "◆";
+  color: var(--cyan);
+  text-shadow: 0 0 6px rgba(111, 208, 255, 0.7);
+}
+.fx-toggle:hover { border-color: var(--cyan); color: var(--text); }
 
 /* ---- ⑩ 结算界面 -------------------------------------------------------- */
 .result-panel {
@@ -1077,6 +1205,7 @@ button { font-family: inherit; }
   <div class="ultimate-banner" id="ultimate-banner"></div>
   <div class="damage-layer" id="damage-layer"></div>
   <div class="fight-prompts" id="fight-prompts">
+    <span class="device-badge" id="device-badge">键盘模式</span>
     <span class="prompt-item"><span class="prompt-key" data-prompt="light"></span><span class="prompt-label">轻攻</span></span>
     <span class="prompt-item"><span class="prompt-key" data-prompt="heavy"></span><span class="prompt-label">重攻</span></span>
     <span class="prompt-item"><span class="prompt-key" data-prompt="skill"></span><span class="prompt-label">技能</span></span>
@@ -1097,6 +1226,26 @@ button { font-family: inherit; }
       <li><button id="pause-restart" class="pause-item">重新开始</button></li>
       <li><button id="pause-menu" class="pause-item">返回主菜单</button></li>
     </ul>
+
+    <!-- P3：画质 + 后处理效果设置 -->
+    <div class="settings-group">
+      <div class="settings-label">画质</div>
+      <div class="quality-row" id="quality-row">
+        <button class="quality-btn" data-quality="low">低</button>
+        <button class="quality-btn" data-quality="medium">中</button>
+        <button class="quality-btn" data-quality="high">高</button>
+        <button class="quality-btn auto" data-quality="auto">自动</button>
+      </div>
+    </div>
+    <div class="settings-group">
+      <div class="settings-label">后处理效果</div>
+      <div class="fx-row">
+        <label class="fx-toggle"><input type="checkbox" id="fx-bloom"><span>Bloom 泛光</span></label>
+        <label class="fx-toggle"><input type="checkbox" id="fx-vignette"><span>暗角</span></label>
+        <label class="fx-toggle"><input type="checkbox" id="fx-film"><span>胶片颗粒</span></label>
+      </div>
+    </div>
+
     <div class="pause-hint">
       <span class="prompt-item"><span class="prompt-key" data-prompt="menu"></span></span>
       <span class="prompt-item"><span class="prompt-key" data-prompt="pause"></span><span class="prompt-label">继续</span></span>
