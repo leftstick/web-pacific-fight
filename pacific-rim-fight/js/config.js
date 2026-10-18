@@ -80,11 +80,11 @@
     mode: 'side',             // 固定横向视角（不可自由旋转）
     height: 12,               // 相机高度
     lookHeight: 6,            // 注视点高度
-    baseDistance: 42,         // 基准横向距离（沿 +Z 看向战场）
-    minDistance: 26,
-    maxDistance: 62,
+    baseDistance: 36,         // 基准横向距离（沿 +Z 看向战场）
+    minDistance: 22,
+    maxDistance: 54,
     maxZ: 26,                 // 相机 z 上限（永远位于战场 +Z 侧）
-    framePadding: 11,         // 自动取景时双方外扩距离
+    framePadding: 6,          // 自动取景时双方外扩距离（收紧 → 单位占屏更大）
     followLerp: 4.2,          // 相机位置跟随平滑
     distLerp: 2.6,            // 距离缩放平滑
     heightLerp: 3.0,
@@ -539,9 +539,12 @@
     pixelRatioCap: 1.75,
     antialias: true,
     shadows: { enabled: true, type: 'PCFSoft', mapSize: 2048, radius: 4 },
-    toneMapping: { type: 'ACESFilmic', exposure: 1.05 },
+    toneMapping: { type: 'ACESFilmic', exposure: 1.12 },
     outputColorSpace: 'srgb',
-    bloom: { enabled: true, strength: 0.85, radius: 0.72, threshold: 0.62 },
+    /* 泛光：降低强度、抬高阈值，让自发光回归“点缀”而非吞掉本体 */
+    bloom: { enabled: true, strength: 0.55, radius: 0.6, threshold: 0.72 },
+    /* IBL 环境贴图：为 PBR 金属提供环境反射（金属漫反射为 0，无环境反射即全黑） */
+    envMap: { enabled: true, intensity: 0.62, blur: 0.04 },
     vignette: { enabled: true, offset: 1.05, darkness: 0.62 },
     filmGrain: { enabled: true, intensity: 0.055 },   // 极淡胶片颗粒
     fog: { enabled: true, near: 40, far: 340, density: 0.0038 },

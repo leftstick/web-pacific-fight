@@ -1181,7 +1181,8 @@ button { font-family: inherit; }
     import('three/addons/postprocessing/OutputPass.js'),
     import('three/addons/postprocessing/ShaderPass.js'),
     import('three/addons/shaders/CopyShader.js'),
-    import('three/addons/postprocessing/FilmPass.js')
+    import('three/addons/postprocessing/FilmPass.js'),
+    import('three/addons/environments/RoomEnvironment.js')
   ]).then(function (m) {
     var THREE = m[0];
 
@@ -1193,7 +1194,8 @@ button { font-family: inherit; }
       OutputPass: m[5] && m[5].OutputPass,
       ShaderPass: m[6] && m[6].ShaderPass,
       CopyShader: m[7] && m[7].CopyShader,
-      FilmPass: m[8] && m[8].FilmPass
+      FilmPass: m[8] && m[8].FilmPass,
+      RoomEnvironment: m[9] && m[9].RoomEnvironment
     };
 
     /* 用 CONFIG.ui.texts.title 覆盖页面标题（若配置已加载） */

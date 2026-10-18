@@ -132,6 +132,9 @@
       /* 3) 灯光（暗调高对比） */
       R._buildLights(scene);
 
+      /* 3.5) IBL 环境贴图：为 PBR 金属提供环境反射（缺省则静默跳过） */
+      R._buildEnvironment(scene);
+
       /* 4) 特效池 + 调试辅助 */
       R._glowTex = R._makeGlowTexture();
       R._buildFxPools(scene);
@@ -528,17 +531,17 @@
       return THREE.NoToneMapping;
     },
 
-    /* 灯光：极暗环境 + 冷月光 + 暖城市辉光 + 闪烁余烬 + 3 盏探照灯 */
+    /* 灯光：暗环境 + 冷月光 + 暖城市辉光 + 闪烁余烬 + 3 盏探照灯 + 冷色轮廓补光 */
     _buildLights: function (scene) {
-      /* 极暗半球光 + 环境光：仅提供最低限度体积感 */
-      R._hemi = new THREE.HemisphereLight(PAL.skyTop, PAL.groundDiffuse, 0.16);
+      /* 半球光 + 环境光：提供基础体积感（过低会让结构不可读，故不再压到极限） */
+      R._hemi = new THREE.HemisphereLight(PAL.skyTop, PAL.groundDiffuse, 0.34);
       R._hemi.position.set(0, 80, 0);
       scene.add(R._hemi);
-      R._amb = new THREE.AmbientLight(PAL.skyBottom, 0.05);
+      R._amb = new THREE.AmbientLight(PAL.skyBottom, 0.10);
       scene.add(R._amb);
 
       /* 冷色“月光”平行光：负责全部投影，方向取自 getSunDirection */
-      var moon = new THREE.DirectionalLight(PAL.searchLight, 0.55);
+      var moon = new THREE.DirectionalLight(PAL.searchLight, 0.75);
       var sd = R.getSunDirection();
       moon.position.copy(sd).multiplyScalar(160);
       moon.target.position.set(0, 0, 0);
@@ -604,8 +607,48 @@
         R._lights.spot++;
       }
 
+      /* 冷色轮廓补光（无阴影，不计入点光预算）：从战场后方打亮单位背缘，强化剪影 */
+      R._rim = new THREE.DirectionalLight(PAL.lightning, 0.42);
+      R._rim.position.set(-14, 46, -70);
+      R._rim.target.position.set(0, 6, 0);
+      scene.add(R._rim);
+      scene.add(R._rim.target);
+
       /* 特效点光池容量 = 剩余点光预算（预留 2 盏给单位专属光） */
       R._fxLightCount = Math.max(1, RENDER.maxLights.point - R._lights.point - 2);
+    },
+
+    /* =======================================================================
+     * _buildEnvironment(scene)
+     *   用 RoomEnvironment + PMREMGenerator 生成 IBL 环境贴图写入 scene.environment。
+     *   PBR 金属漫反射为 0，外观全靠环境反射；没有 IBL 时金属会渲染成黑色。
+     *   addon 缺失或生成失败时静默跳过（材质仍可用，仅失去环境反射）。
+     * ==================================================================== */
+    _buildEnvironment: function (scene) {
+      if (!RENDER.envMap || !RENDER.envMap.enabled) return;
+      var a = ADDONS || {};
+      if (!a.RoomEnvironment || !THREE.PMREMGenerator) {
+        if (!R._warnedNoEnv) {
+          R._warnedNoEnv = true;
+          console.warn('[Renderer] RoomEnvironment/PMREMGenerator 不可用，跳过 IBL 环境贴图。');
+        }
+        return;
+      }
+      try {
+        var pmrem = new THREE.PMREMGenerator(R.renderer);
+        var room = new a.RoomEnvironment();
+        var rt = pmrem.fromScene(room, RENDER.envMap.blur || 0.04);
+        scene.environment = rt.texture;
+        if ('environmentIntensity' in scene) scene.environmentIntensity = RENDER.envMap.intensity;
+        if (room.dispose) room.dispose();
+        pmrem.dispose();
+        R._envRT = rt;
+      } catch (e) {
+        if (!R._warnedNoEnv) {
+          R._warnedNoEnv = true;
+          console.warn('[Renderer] IBL 环境贴图生成失败，已跳过：', e && e.message);
+        }
+      }
     },
 
     /* 特效对象池：火花 / 闪光 / 尘雾 / 冲击波环 / 特效点光（一次预建，热身后零分配） */

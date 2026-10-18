@@ -88,16 +88,27 @@
     /* ================================================================== */
     /* 通用建模辅助                                                        */
     /* ================================================================== */
+    /* 通用 PBR 材质：金属度/粗糙度默认值已下调，配合 IBL 环境贴图避免金属全黑；
+       opts.maps 可传入 { map, roughnessMap, bumpMap, normalMap } 叠加表面细节。 */
     _mat: function (color, opts) {
       opts = opts || {};
-      return new THREE.MeshStandardMaterial({
+      var m = new THREE.MeshStandardMaterial({
         color: color,
-        metalness: opts.metalness !== undefined ? opts.metalness : 0.85,
-        roughness: opts.roughness !== undefined ? opts.roughness : 0.45,
+        metalness: opts.metalness !== undefined ? opts.metalness : 0.55,
+        roughness: opts.roughness !== undefined ? opts.roughness : 0.5,
         emissive: opts.emissive !== undefined ? opts.emissive : 0x000000,
         emissiveIntensity: opts.emissiveIntensity || 1,
         flatShading: !!opts.flat
       });
+      if (opts.maps) {
+        if (opts.maps.map) m.map = opts.maps.map;
+        if (opts.maps.roughnessMap) m.roughnessMap = opts.maps.roughnessMap;
+        if (opts.maps.bumpMap) m.bumpMap = opts.maps.bumpMap;
+        if (opts.maps.normalMap) m.normalMap = opts.maps.normalMap;
+      }
+      if (opts.bumpScale !== undefined) m.bumpScale = opts.bumpScale;
+      if (opts.envMapIntensity !== undefined) m.envMapIntensity = opts.envMapIntensity;
+      return m;
     },
     _glowMat: function (color, intensity) {
       return new THREE.MeshStandardMaterial({
@@ -128,6 +139,34 @@
       parent.add(m);
       return m;
     },
+    /* 倒角装甲板：圆角矩形沿 Z 挤出并倒角，比纯 Box 更有体积与高光层次 */
+    _bevel: function (parent, w, h, d, mat, x, y, z, ry, radius) {
+      var r = radius === undefined ? Math.min(w, h) * 0.14 : radius;
+      r = Math.max(0, Math.min(r, w * 0.45, h * 0.45));
+      var hw = w / 2 - r, hh = h / 2 - r;
+      var shape = new THREE.Shape();
+      shape.moveTo(-hw, -h / 2);
+      shape.lineTo(hw, -h / 2);
+      shape.quadraticCurveTo(w / 2, -h / 2, w / 2, -hh);
+      shape.lineTo(w / 2, hh);
+      shape.quadraticCurveTo(w / 2, h / 2, hw, h / 2);
+      shape.lineTo(-hw, h / 2);
+      shape.quadraticCurveTo(-w / 2, h / 2, -w / 2, hh);
+      shape.lineTo(-w / 2, -hh);
+      shape.quadraticCurveTo(-w / 2, -h / 2, -hw, -h / 2);
+      var bs = Math.min(w, h, d) * 0.12;
+      var body = Math.max(0.001, d - bs * 2);
+      var geo = new THREE.ExtrudeGeometry(shape, {
+        depth: body, bevelEnabled: true, bevelThickness: bs, bevelSize: bs, bevelSegments: 2, curveSegments: 3
+      });
+      geo.translate(0, 0, -body / 2);
+      var m = new THREE.Mesh(geo, mat);
+      m.position.set(x || 0, y || 0, z || 0);
+      if (ry) m.rotation.y = ry;
+      m.castShadow = true; m.receiveShadow = true;
+      parent.add(m);
+      return m;
+    },
 
     /* ================================================================== */
     /* 玩家机甲（环太平洋重型机甲风格）                                     */
@@ -137,11 +176,12 @@
       var style = def.style;
       var heavy = style === 'heavy';
       var w = heavy ? 1.28 : 1.0;                 // 体格宽度系数
-      var armor = Models._mat(def.armor, { metalness: 0.9, roughness: 0.42 });
-      var accent = Models._mat(def.accent, { metalness: 0.85, roughness: 0.4 });
-      var dark = Models._mat(0x10151a, { metalness: 0.7, roughness: 0.6 });
-      var glow = Models._glowMat(def.glow, 2.4);
-      var glowWarm = Models._glowMat(0xffd9a0, 1.6);
+      var tex = unitTextures('mecha');
+      var armor = Models._mat(def.armor, { metalness: 0.62, roughness: 0.5, maps: tex, bumpScale: 0.02, envMapIntensity: 1.0 });
+      var accent = Models._mat(def.accent, { metalness: 0.72, roughness: 0.42, maps: tex, envMapIntensity: 1.0 });
+      var dark = Models._mat(0x10151a, { metalness: 0.5, roughness: 0.66, envMapIntensity: 0.8 });
+      var glow = Models._glowMat(def.glow, 1.15);
+      var glowWarm = Models._glowMat(0xffd9a0, 0.85);
       var glowMaterials = [glow, glowWarm];
 
       var root = new THREE.Group();
@@ -156,11 +196,11 @@
         var sx = (side === 'L' ? -1 : 1) * H * 0.085 * w;
         var leg = Models._part('leg' + side, root, sx, H * 0.47, 0);
         leg.rotation.z = (side === 'L' ? 1 : -1) * 0.02;
-        Models._box(leg, H * 0.085 * w, thigh, H * 0.09 * w, armor, 0, -thigh * 0.5, 0);      // 大腿
+        Models._bevel(leg, H * 0.085 * w, thigh, H * 0.09 * w, armor, 0, -thigh * 0.5, 0);   // 大腿（倒角装甲）
         Models._box(leg, H * 0.06 * w, thigh * 0.5, H * 0.1 * w, accent, 0, -thigh * 0.2, 0); // 髋侧甲
         var knee = Models._part('shin' + side, leg, 0, -thigh, 0);
         Models._cyl(knee, H * 0.05, H * 0.05, H * 0.06, dark, 0, 0, 0, 10);
-        Models._box(knee, H * 0.07 * w, shin, H * 0.075 * w, armor, 0, -shin * 0.5, 0);
+        Models._bevel(knee, H * 0.07 * w, shin, H * 0.075 * w, armor, 0, -shin * 0.5, 0);    // 小腿（倒角装甲）
         Models._box(knee, H * 0.075 * w, H * 0.03, H * 0.085 * w, accent, 0, 0.01, H * 0.005); // 膝甲
         var foot = Models._part('foot' + side, knee, 0, -shin, 0);
         Models._box(foot, H * 0.1 * w, H * 0.04, H * 0.14 * w, dark, 0, H * 0.02, H * 0.02);
@@ -176,8 +216,8 @@
       var body = Models._part('body', root, 0, H * 0.53, 0);
       parts4.torso = body;
       Models._box(body, H * 0.15 * w, H * 0.08, H * 0.1 * w, armor, 0, -H * 0.015, 0);        // 腰腹
-      Models._box(body, H * 0.21 * w, H * 0.19, H * 0.135 * w, armor, 0, H * 0.1, 0);          // 胸腔
-      Models._box(body, H * 0.235 * w, H * 0.045, H * 0.145 * w, accent, 0, H * 0.20, 0);      // 肩桥
+      Models._bevel(body, H * 0.21 * w, H * 0.19, H * 0.135 * w, armor, 0, H * 0.1, 0);       // 胸腔（倒角装甲）
+      Models._bevel(body, H * 0.235 * w, H * 0.045, H * 0.145 * w, accent, 0, H * 0.20, 0);   // 肩桥（倒角装甲）
       Models._box(body, H * 0.09 * w, H * 0.16, H * 0.02, dark, 0, H * 0.1, H * 0.072 * w);    // 胸口面板
       /* 胸口反应堆（自发光核心） */
       var core = Models._part('reactor', body, 0, H * 0.115, H * 0.055 * w);
@@ -214,7 +254,7 @@
         var shW = heavy ? H * 0.115 : H * 0.085;
         var shoulder = Models._part('shoulder' + side, body, sgn * H * 0.13 * w, H * 0.175, 0);
         Models._box(shoulder, shW, H * 0.055, H * 0.11 * w, accent, sgn * H * 0.01, 0, 0);
-        Models._box(shoulder, shW * 0.75, H * 0.09, H * 0.1 * w, armor, sgn * H * 0.015, -H * 0.02, 0);   // 肩甲
+        Models._bevel(shoulder, shW * 0.75, H * 0.09, H * 0.1 * w, armor, sgn * H * 0.015, -H * 0.02, 0);  // 肩甲（倒角装甲）
         Models._box(shoulder, H * 0.02, H * 0.02, H * 0.02, glow, sgn * H * 0.045, 0.005, 0);           // 肩灯
         var arm = Models._part('arm' + side, shoulder, 0, -H * 0.03, 0);
         Models._cyl(arm, H * 0.035, H * 0.032, H * 0.19, armor, 0, -H * 0.095, 0, 10);   // 上臂
@@ -256,11 +296,12 @@
       var H = def.height * (def.scale || 1);
       var fast = def.style === 'fast';
       var bulk = fast ? 0.92 : 1.22;
-      var skin = Models._mat(def.skin, { metalness: 0.05, roughness: 0.92, flat: true });
-      var belly = Models._mat(def.belly, { metalness: 0.05, roughness: 0.85, flat: true });
-      var plate = Models._mat(0x2b3238, { metalness: 0.35, roughness: 0.8, flat: true });
-      var glow = Models._glowMat(def.glow, 2.0);
-      var glowSoft = Models._glowMat(def.glow, 1.2);
+      var tex = unitTextures('kaiju');
+      var skin = Models._mat(def.skin, { metalness: 0.05, roughness: 0.9, flat: true, maps: tex, bumpScale: 0.035 });
+      var belly = Models._mat(def.belly, { metalness: 0.05, roughness: 0.85, flat: true, maps: tex, bumpScale: 0.025 });
+      var plate = Models._mat(0x2b3238, { metalness: 0.35, roughness: 0.8, flat: true, maps: tex, bumpScale: 0.03 });
+      var glow = Models._glowMat(def.glow, 0.95);
+      var glowSoft = Models._glowMat(def.glow, 0.6);
       var glowMaterials = [glow, glowSoft];
 
       var root = new THREE.Group();
@@ -291,7 +332,7 @@
       var torso = Models._part('torso', root, 0, H * 0.58, -H * 0.02);
       parts.torso = torso;
       var chest = Models._part('chest', torso, 0, H * 0.07, 0);
-      Models._box(chest, H * 0.26 * bulk, H * 0.2, H * 0.22 * bulk, skin, 0, 0, 0);
+      Models._bevel(chest, H * 0.26 * bulk, H * 0.2, H * 0.22 * bulk, skin, 0, 0, 0);
       Models._box(chest, H * 0.2 * bulk, H * 0.18, H * 0.1, belly, 0, -H * 0.02, H * 0.09);   // 胸腹
       /* 背部生物发光甲板 / 脊刺 */
       var spine = Models._part('spine', torso, 0, H * 0.15, -H * 0.09 * bulk);
@@ -302,7 +343,7 @@
       }
       if (!fast) {
         /* 重甲型：大型背甲板 */
-        Models._box(torso, H * 0.3 * bulk, H * 0.05, H * 0.2 * bulk, plate, 0, H * 0.19, -H * 0.03);
+        Models._bevel(torso, H * 0.3 * bulk, H * 0.05, H * 0.2 * bulk, plate, 0, H * 0.19, -H * 0.03);
         Models._box(torso, H * 0.24 * bulk, H * 0.04, H * 0.16 * bulk, plate, 0, H * 0.13, -H * 0.06);
         for (var g = -1; g <= 1; g += 2) Models._box(torso, H * 0.015, H * 0.12, H * 0.06, glowSoft, g * H * 0.11 * bulk, H * 0.05, -H * 0.11 * bulk);
       }
@@ -772,14 +813,124 @@
     c.width = w; c.height = h;
     return c;
   }
-  function canvasTexture(canvas, repeat) {
+  function canvasTexture(canvas, repeat, linear) {
     var t = new THREE.CanvasTexture(canvas);
-    t.colorSpace = THREE.SRGBColorSpace;
+    /* 颜色贴图需 SRGB；数据贴图（roughnessMap / bumpMap）保持线性空间 */
+    if (!linear) t.colorSpace = THREE.SRGBColorSpace;
     if (repeat) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(repeat[0], repeat[1]); }
     t.anisotropy = 4;
     return t;
   }
   function hex(col) { return '#' + new THREE.Color(col).getHexString(); }
+
+  /* ==================================================================== */
+  /* 单位程序化 PBR 贴图                                                   */
+  /*   · map 以近白为底，乘到材质 color 上 → 不改变单位配色，只叠加细节     */
+  /*   · roughnessMap / bumpMap 用于制造面板线 / 鳞片 / 磨损的微观层次      */
+  /*   · 按 kind 缓存，机甲与怪兽各一套，避免重复生成                       */
+  /* ==================================================================== */
+  var _unitTexCache = {};
+  function unitTextures(kind) {
+    if (_unitTexCache[kind]) return _unitTexCache[kind];
+    var set = {};
+
+    if (kind === 'kaiju') {
+      /* --- 生物皮肤：斑驳鳞片 --- */
+      var kc = makeCanvas(512, 512), kg = kc.getContext('2d');
+      kg.fillStyle = '#ffffff'; kg.fillRect(0, 0, 512, 512);
+      for (var i = 0; i < 1400; i++) {
+        var v = U.randInt(0, 60);
+        var lum = 200 - v;
+        kg.fillStyle = 'rgba(' + lum + ',' + lum + ',' + lum + ',' + U.rand(0.06, 0.22).toFixed(2) + ')';
+        kg.beginPath();
+        kg.ellipse(U.rand(0, 512), U.rand(0, 512), U.rand(6, 22), U.rand(4, 12), Math.random() * 3, 0, Math.PI * 2);
+        kg.fill();
+      }
+      /* 鳞片网格暗线 */
+      kg.strokeStyle = 'rgba(120,120,120,0.35)'; kg.lineWidth = 1.4;
+      for (var ky = 0; ky < 560; ky += 26) {
+        for (var kx = 0; kx < 560; kx += 26) {
+          kg.beginPath();
+          kg.arc(kx + U.rand(-4, 4), ky + U.rand(-4, 4), U.rand(8, 13), 0, Math.PI * 2);
+          kg.stroke();
+        }
+      }
+      set.map = canvasTexture(kc);
+
+      /* 粗糙度：整体偏粗糙，局部有光滑膜感 */
+      var krc = makeCanvas(256, 256), krg = krc.getContext('2d');
+      krg.fillStyle = '#cfcfcf'; krg.fillRect(0, 0, 256, 256);
+      for (var j = 0; j < 260; j++) {
+        krg.fillStyle = 'rgba(' + U.randInt(90, 240) + ',' + U.randInt(90, 240) + ',' + U.randInt(90, 240) + ',' + U.rand(0.2, 0.5).toFixed(2) + ')';
+        krg.beginPath(); krg.ellipse(U.rand(0, 256), U.rand(0, 256), U.rand(5, 18), U.rand(4, 12), 0, 0, Math.PI * 2); krg.fill();
+      }
+      set.roughnessMap = canvasTexture(krc, null, true);
+
+      /* 凸凹：与鳞片暗线同构 */
+      var kbc = makeCanvas(256, 256), kbg = kbc.getContext('2d');
+      kbg.fillStyle = '#808080'; kbg.fillRect(0, 0, 256, 256);
+      kbg.strokeStyle = '#4a4a4a'; kbg.lineWidth = 2;
+      for (var by = 0; by < 300; by += 20) {
+        for (var bx = 0; bx < 300; bx += 20) {
+          kbg.beginPath(); kbg.arc(bx + U.rand(-3, 3), by + U.rand(-3, 3), U.rand(6, 10), 0, Math.PI * 2); kbg.stroke();
+        }
+      }
+      set.bumpMap = canvasTexture(kbc, null, true);
+    } else {
+      /* --- 机甲装甲：面板线 + 铆钉 + 磨损 --- */
+      var mc = makeCanvas(512, 512), mg = mc.getContext('2d');
+      mg.fillStyle = '#f2f2f2'; mg.fillRect(0, 0, 512, 512);
+      /* 面板缝隙 */
+      mg.strokeStyle = 'rgba(70,70,70,0.55)'; mg.lineWidth = 2;
+      for (var gy = 0; gy <= 512; gy += 64) { mg.beginPath(); mg.moveTo(0, gy); mg.lineTo(512, gy); mg.stroke(); }
+      for (var gx = 0; gx <= 512; gx += 64) { mg.beginPath(); mg.moveTo(gx, 0); mg.lineTo(gx, 512); mg.stroke(); }
+      mg.strokeStyle = 'rgba(90,90,90,0.35)'; mg.lineWidth = 1;
+      for (var sy = 32; sy <= 480; sy += 64) {
+        for (var sx = 32; sx <= 480; sx += 64) { mg.beginPath(); mg.moveTo(sx, sy); mg.lineTo(sx + 40, sy); mg.stroke(); }
+      }
+      /* 铆钉 */
+      mg.fillStyle = 'rgba(60,60,60,0.55)';
+      for (var ny = 0; ny <= 512; ny += 64) {
+        for (var nx = 0; nx <= 512; nx += 64) {
+          for (var rv = 0; rv < 3; rv++) { mg.beginPath(); mg.arc(nx + U.rand(8, 56), ny + U.rand(8, 56), 2.0, 0, Math.PI * 2); mg.fill(); }
+        }
+      }
+      /* 划痕 / 污渍 */
+      mg.strokeStyle = 'rgba(255,255,255,0.25)'; mg.lineWidth = 1;
+      for (var sc = 0; sc < 90; sc++) {
+        var lx = U.rand(0, 512), ly = U.rand(0, 512);
+        mg.beginPath(); mg.moveTo(lx, ly); mg.lineTo(lx + U.rand(-24, 24), ly + U.rand(-6, 6)); mg.stroke();
+      }
+      for (var dt = 0; dt < 120; dt++) {
+        mg.fillStyle = 'rgba(40,40,40,' + U.rand(0.04, 0.14).toFixed(2) + ')';
+        mg.fillRect(U.rand(0, 512), U.rand(0, 512), U.rand(1, 4), U.rand(1, 4));
+      }
+      set.map = canvasTexture(mc);
+
+      /* 粗糙度：基板较光滑，缝线/磨损处更粗糙 */
+      var mrc = makeCanvas(256, 256), mrg = mrc.getContext('2d');
+      mrg.fillStyle = '#8a8a8a'; mrg.fillRect(0, 0, 256, 256);
+      for (var mr = 0; mr < 180; mr++) {
+        mrg.fillStyle = 'rgba(' + U.randInt(120, 240) + ',' + U.randInt(120, 240) + ',' + U.randInt(120, 240) + ',' + U.rand(0.15, 0.4).toFixed(2) + ')';
+        mrg.fillRect(U.rand(0, 256), U.rand(0, 256), U.rand(4, 30), U.rand(2, 10));
+      }
+      mrg.strokeStyle = 'rgba(230,230,230,0.5)'; mrg.lineWidth = 2;
+      for (var mry = 0; mry <= 256; mry += 32) { mrg.beginPath(); mrg.moveTo(0, mry); mrg.lineTo(256, mry); mrg.stroke(); }
+      for (var mrx = 0; mrx <= 256; mrx += 32) { mrg.beginPath(); mrg.moveTo(mrx, 0); mrg.lineTo(mrx, 256); mrg.stroke(); }
+      set.roughnessMap = canvasTexture(mrc, null, true);
+
+      /* 凸凹：面板缝为凹槽 */
+      var mbc = makeCanvas(256, 256), mbg = mbc.getContext('2d');
+      mbg.fillStyle = '#b0b0b0'; mbg.fillRect(0, 0, 256, 256);
+      mbg.strokeStyle = '#303030'; mbg.lineWidth = 3;
+      for (var mby = 0; mby <= 256; mby += 32) { mbg.beginPath(); mbg.moveTo(0, mby); mbg.lineTo(256, mby); mbg.stroke(); }
+      for (var mbx = 0; mbx <= 256; mbx += 32) { mbg.beginPath(); mbg.moveTo(mbx, 0); mbg.lineTo(mbx, 256); mbg.stroke(); }
+      set.bumpMap = canvasTexture(mbc, null, true);
+    }
+
+    _unitTexCache[kind] = set;
+    return set;
+  }
 
   function cityTextures() {
     var tex = {};
