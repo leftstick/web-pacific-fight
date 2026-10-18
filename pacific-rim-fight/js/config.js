@@ -155,6 +155,86 @@
       duration: 0.18,          // 闪白持续（秒）
       decay: 5.5,              // 衰减系数
       color: 0xffffff          // 闪白色（白）
+    },
+    /* =========================================================================
+     * fx —— 战斗特效统一参数（P2：拖尾 / 火花 / 爆炸 / 护盾波纹 / 镜头震动）
+     *   所有数量上限与强度集中于此，renderer.js 读取，便于迭代调参。
+     *   纯渲染层：不参与碰撞 / 物理 / 伤害结算。
+     * ====================================================================== */
+    fx: {
+      /* --- 攻击拖尾（带状几何体，追踪右臂世界坐标） --- */
+      trail: {
+        enabled: true,
+        segments: 16,           // 拖尾段数（越大越平滑、越费顶点）
+        width: 1.6,             // 头部宽度（世界单位）
+        widthFalloff: 0.25,     // 尾部宽度 = 头部 * 该值
+        life: 0.22,             // 单段拖尾寿命（秒），决定拖尾长度
+        opacity: 0.85,
+        /* 各动作拖尾色（机甲冷蓝 / 橙；怪兽青绿） */
+        colorLight: 0x6fd0ff,
+        colorHeavy: 0xffc86b,
+        colorSkill: 0xff7a1e,
+        colorUltimate: 0x9fd8ff,
+        colorKaiju: 0x69ffc8,
+        maxActive: 4            // 同时存在的拖尾条数上限
+      },
+      /* --- 命中火花 --- */
+      spark: {
+        pool: 120,              // 池容量
+        tiers: {                // level 1 轻 / 2 重 / 3 必杀
+          1: { count: 12, speed: 16, life: 0.34, flashSize: 2.6, flashLife: 0.13, light: 5.0, lightLife: 0.18, ring: false, color: 0xdff1ff },
+          2: { count: 22, speed: 24, life: 0.50, flashSize: 4.4, flashLife: 0.19, light: 16.0, lightLife: 0.30, ring: false, color: 0xff7a1e },
+          3: { count: 38, speed: 32, life: 0.72, flashSize: 7.0, flashLife: 0.28, light: 36.0, lightLife: 0.48, ring: true,  color: 0x9fd8ff }
+        }
+      },
+      /* --- 爆炸（建筑崩塌 / 必杀终结） --- */
+      explosion: {
+        pool: 6,                // 爆炸实例上限
+        radius: 9,              // 爆炸半径
+        sparks: 28,             // 迸射火星数
+        dustCount: 14,          // 烟尘数
+        ringFrom: 1.2, ringTo: 20,
+        ringLife: 0.7,
+        light: 30, lightLife: 0.5,
+        color: 0xff7a1e,
+        smokeColor: 0x2b3236
+      },
+      /* --- 护盾波纹（格挡命中瞬间） --- */
+      shield: {
+        pool: 8,                // 波纹实例上限
+        radiusFrom: 2.0,
+        radiusTo: 7.5,
+        life: 0.5,
+        opacity: 0.7,
+        color: 0x6fd0ff
+      },
+      /* --- 分级镜头震动 --- */
+      shake: {
+        tiers: {                // level → 强度（叠加、上限由 camera.shake.max 控制）
+          1: 0.35,              // 轻攻击
+          2: 0.9,               // 重攻击 / 技能
+          3: 1.8,               // 必杀技
+          4: 1.6                // 建筑崩塌
+        },
+        decay: 6.5,             // 衰减速度
+        rotScale: 0.06          // 旋转震动系数
+      },
+      /* --- 必杀镜头缩放 --- */
+      zoom: {
+        enabled: true,
+        scale: 0.74,            // 距离乘数（越小越近）
+        inTime: 0.22,           // 拉近时长
+        hold: 1.4,              // 保持时长
+        outTime: 0.40,          // 拉回时长
+        fovKick: -3             // 触发瞬间 fov 微收（deg），增强冲击
+      },
+      /* --- 平滑跟随 --- */
+      follow: {
+        positionLerp: 4.6,      // 位置跟随（越大越紧）
+        distanceLerp: 2.8,      // 距离缩放
+        heightLerp: 3.2,        // 高度
+        deadZone: 1.2           // 跟随死区（单位位移小于此值时相机不动，减少微抖）
+      }
     }
   };
 

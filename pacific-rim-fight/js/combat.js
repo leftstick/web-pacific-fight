@@ -266,7 +266,9 @@
       /* --- 反馈：顿帧 / 震动 / 音效 / 特效 --- */
       this.hitstop(result.hitstop);
       if (this.renderer && this.renderer.cameraShake) {
-        this.renderer.cameraShake((move.groundShake || 0.4) * (blocked ? 0.4 : 1));
+        /* P2：分级镜头震动（1 轻 / 2 重·技能 / 3 必杀；格挡降级为 1） */
+        var lv = blocked ? 1 : (move.key === 'ultimate' ? 3 : (move.key === 'heavy' || move.key === 'skill' || move.key === 'tail' || move.key === 'charge' ? 2 : 1));
+        this.renderer.cameraShake(lv);
       }
       if (this.renderer && this.renderer.spawnImpact) {
         this.renderer.spawnImpact(result.position, blocked ? 1 : (move.key === 'ultimate' ? 3 : 2), result.facing);
@@ -274,7 +276,7 @@
       if (global.GAME.Audio) GAME.Audio.play(blocked ? 'block' : 'hit', {});
       if (move.key === 'ultimate' && this.renderer && this.renderer.zoomPunch) this.renderer.zoomPunch();
       if (move.breakGuard && this.renderer && this.renderer.cameraShake) {
-        this.renderer.cameraShake(1.2);
+        this.renderer.cameraShake(2);                          /* P2：破防 → 2 级震动 */
       }
 
       /* --- 场景破坏：命中点附近的建筑也会受损 --- */
@@ -383,7 +385,7 @@
         var destroyedPos = building.position.clone ? building.position.clone() : building.position;
         if (this.renderer && this.renderer.collapseBuilding) this.renderer.collapseBuilding(building, dir);
         if (global.GAME.Audio) GAME.Audio.play('explosion');
-        if (this.renderer && this.renderer.cameraShake) this.renderer.cameraShake(1.6);
+        if (this.renderer && this.renderer.cameraShake) this.renderer.cameraShake(4);  /* P2：建筑崩塌 → 4 级 */
         /* 爆炸伤害 */
         for (var i = 0; i < this.units.length; i++) {
           var u = this.units[i];

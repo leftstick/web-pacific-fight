@@ -507,6 +507,12 @@
   Player.prototype._onActiveEnter = function (mi, opponent, renderer) {
     var move = mi.move;
     var key = mi.key;
+
+    /* P2：攻击拖尾（纯渲染层，追踪右臂；不触碰 position / 物理） */
+    if (renderer && renderer.startTrail) {
+      renderer.startTrail(this, trailColorFor(key, 'mecha'));
+    }
+
     if (key === 'light') {
       this._advanceToward(opponent, 1.3, 0.14);          // 轻攻击小步前压
     } else if (key === 'heavy') {
@@ -548,6 +554,8 @@
 
   /* 动作结束：清空动作实例并回到可行动状态 */
   Player.prototype._endMove = function () {
+    /* P2：结束攻击拖尾 */
+    if (this.renderer && this.renderer.endTrail) this.renderer.endTrail(this);
     this.moveInst = null;
     this._advanceT = 0; this._advanceVX = 0; this._advanceVZ = 0;
     this._firing = false;
@@ -867,11 +875,19 @@
       this.anim('hit', { fade: 0.06, timeScale: 1.4, force: true });
       this.frozen = Math.max(this.frozen, result.hitstop || HITR.hitStopLight);
       this._hitBack = Math.max(this._hitBack, 0.5);
+      /* P2：格挡护盾波纹（受击点展开能量环，纯渲染层） */
+      if (this.renderer && this.renderer.spawnShieldRipple) {
+        var shieldColor = (CONFIG.artConfig && CONFIG.artConfig.glow && CONFIG.artConfig.glow.mechaCore) ? 0x6fd0ff : 0x6fd0ff;
+        this.renderer.spawnShieldRipple(result.position, shieldColor);
+      }
       this._applyKnockback(result, false);
       return;
     }
 
     /* --- 普通受击：播放受击片段、冻结、打断当前动作（必杀除外）、击退 --- */
+    if (this.moveInst) {                                    /* P2：被打断时结束拖尾 */
+      if (this.renderer && this.renderer.endTrail) this.renderer.endTrail(this);
+    }
     this.moveInst = null;
     this._advanceT = 0; this._advanceVX = 0; this._advanceVZ = 0;
     this._doingDodge = false; this.invuln = false;
@@ -1046,6 +1062,16 @@
   Player.prototype._emitNoResource = function (kind, key) {
     U.bus.emit('unit:no-resource', { unit: this, kind: kind, action: key });
   };
+
+  /* P2：按动作键返回拖尾颜色（取自 ART_CONFIG.fx.trail） */
+  function trailColorFor(key, faction) {
+    var T = (CONFIG.artConfig && CONFIG.artConfig.fx && CONFIG.artConfig.fx.trail) || {};
+    if (faction === 'kaiju') return T.colorKaiju || 0x69ffc8;
+    if (key === 'heavy') return T.colorHeavy || 0xffc86b;
+    if (key === 'skill') return T.colorSkill || 0xff7a1e;
+    if (key === 'ultimate') return T.colorUltimate || 0x9fd8ff;
+    return T.colorLight || 0x6fd0ff;
+  }
 
   GAME.Player = Player;
 

@@ -354,6 +354,10 @@
         /* 格挡成功：保持格挡姿态，不被节奏打断 */
         this._stress();
         if (GAME.Audio) GAME.Audio.play('block');
+        /* P2：格挡护盾波纹（受击点展开能量环，纯渲染层） */
+        if (this.renderer && this.renderer.spawnShieldRipple) {
+          this.renderer.spawnShieldRipple(result.position, 0x69ffc8);
+        }
         this._emitState();
         return;
       }
@@ -362,6 +366,7 @@
       var ultLock = this.moveInst && this.moveInst.isUltimate;
 
       if (this.moveInst && !ultLock) {
+        if (this.renderer && this.renderer.endTrail) this.renderer.endTrail(this);  // P2：被打断结束拖尾
         this.moveInst = null;                 // 打断当前动作
         this.state = 'hit';
         this.currentMoveKey = null;
@@ -659,7 +664,13 @@
       if (!mi) return;
       var evt = (combat && combat.updateMove) ? combat.updateMove(this, dt) : this._stepMove(dt, mi);
 
+      /* P2：攻击拖尾（纯渲染层，追踪右臂；不触碰 position / 物理） */
+      if (evt === 'active-enter' && this.renderer && this.renderer.startTrail) {
+        this.renderer.startTrail(this, enemyTrailColor(mi.key));
+      }
+
       if (evt === 'done') {
+        if (this.renderer && this.renderer.endTrail) this.renderer.endTrail(this);  // P2
         var wasBite = (mi.key === 'bite');
         this.moveInst = null;
         this.currentMoveKey = null;
@@ -1118,6 +1129,15 @@
       });
     }
   };
+
+  /* P2：怪兽攻击拖尾颜色（取自 ART_CONFIG.fx.trail，重招偏暖） */
+  function enemyTrailColor(key) {
+    var T = (CONFIG.artConfig && CONFIG.artConfig.fx && CONFIG.artConfig.fx.trail) || {};
+    if (key === 'charge') return T.colorSkill || 0xff7a1e;
+    if (key === 'tail') return T.colorHeavy || 0xffc86b;
+    if (key === 'ultimate') return T.colorUltimate || 0x9fd8ff;
+    return T.colorKaiju || 0x69ffc8;
+  }
 
   GAME.Enemy = Enemy;
 

@@ -28,16 +28,37 @@
   var DEG = Math.PI / 180;
 
   /* ---------------------------------------------------------------------------
-   * 内部特效池容量（与 config 无关的内部常量，仅决定池大小）
+   * 内部特效池容量：取自 ART_CONFIG.fx（P2 统一参数管理），回退到安全默认值。
    * ------------------------------------------------------------------------ */
-  var FX = { spark: 84, flash: 18, dust: 40, ring: 6 };
-
-  /* 命中等级参数：1 轻 / 2 重 / 3 必杀；颜色取自调色板 */
-  var IMPACT = {
-    1: { sparks: 10, speed: 15, sparkLife: 0.34, flashSize: 2.6, flashLife: 0.13, light: 5.0, lightLife: 0.18, ring: false, color: PAL.searchLight },
-    2: { sparks: 20, speed: 22, sparkLife: 0.50, flashSize: 4.4, flashLife: 0.19, light: 16.0, lightLife: 0.30, ring: false, color: PAL.emberOrange },
-    3: { sparks: 34, speed: 30, sparkLife: 0.72, flashSize: 7.0, flashLife: 0.28, light: 34.0, lightLife: 0.48, ring: true, color: PAL.lightning }
+  var FXCFG = (AC.fx) || {};
+  var SPARK_TIERS = (FXCFG.spark && FXCFG.spark.tiers) || {};
+  var FX = {
+    spark: (FXCFG.spark && FXCFG.spark.pool) || 120,
+    flash: (FXCFG.shield && FXCFG.shield.pool) ? ((FXCFG.shield.pool * 3) | 0) + 24 : 24,
+    dust: (FXCFG.explosion && FXCFG.explosion.dustCount) ? (FXCFG.explosion.dustCount * 4) : 40,
+    ring: Math.max(6, ((FXCFG.explosion && FXCFG.explosion.pool) || 6) + ((FXCFG.spark && SPARK_TIERS[3] && SPARK_TIERS[3].ring) ? 6 : 0)),
+    shield: (FXCFG.shield && FXCFG.shield.pool) || 8,
+    explosion: (FXCFG.explosion && FXCFG.explosion.pool) || 6,
+    trail: (FXCFG.trail && FXCFG.trail.maxActive) || 4
   };
+
+  /* 命中等级参数：1 轻 / 2 重 / 3 必杀；取自 ART_CONFIG.fx.spark.tiers，
+     缺失时回退到调色板安全值。 */
+  function impactTier(level) {
+    var t = SPARK_TIERS[level] || SPARK_TIERS[1] || {};
+    return {
+      sparks: t.count || 12,
+      speed: t.speed || 16,
+      sparkLife: t.life || 0.34,
+      flashSize: t.flashSize || 2.6,
+      flashLife: t.flashLife || 0.13,
+      light: t.light || 5,
+      lightLife: t.lightLife || 0.18,
+      ring: !!t.ring,
+      color: t.color !== undefined ? t.color : PAL.searchLight
+    };
+  }
+  var IMPACT = { 1: impactTier(1), 2: impactTier(2), 3: impactTier(3) };
 
   /* ===========================================================================
    * GAME.Renderer —— 对外 API（属性 + 方法）
@@ -59,6 +80,7 @@
     _glowTex: null, _ringGeo: null,
     _fxGroup: null, _debugGroup: null,
     _sparks: [], _flashes: [], _dusts: [], _rings: [], _fxLights: [],
+    _shields: [], _explosions: [], _trails: [],
     _unitHandles: [], _unitLightPool: [], _debris: [],
     _lights: { point: 0, spot: 0 },
     _fxLightCount: 0,
@@ -338,22 +360,149 @@
         fl.active = true;
       }
       R._pulseFxLight(R._tmp.set(bx, bh * 0.5, bz), PAL.emberOrange, 22, 0.5);
+
+      /* P2：建筑崩塌 → 大爆炸特效（冲击波环 + 火星 + 烟尘 + 强点光） */
+      R.spawnExplosion(R._tmp.set(bx, bh * 0.5, bz), 4);
     },
 
     /* =======================================================================
-     * cameraShake(intensity) —— 叠加式屏幕震动（上限 CONFIG.camera.shake.max）
+     * spawnExplosion(position, level)
+     *   P2 大爆炸特效（建筑崩塌 / 必杀终结）：冲击波环 + 迸射火星 +
+     *   上升烟尘 + 强点光。level 预留分级（当前 4 级=建筑）。
+     *   取自 ART_CONFIG.fx.explosion。纯渲染层。
+     * ==================================================================== */
+    spawnExplosion: function (position, level) {
+      if (!position) return;
+      var E = (FXCFG.explosion) || {};
+      var pos = R._pos(position);
+
+      /* 冲击波环（复用 ring 池） */
+      var rg = R._acquire(R._rings);
+      if (rg) {
+        rg.mesh.position.copy(pos);
+        rg.mesh.rotation.set(0, 0, 0);
+        rg.mesh.material.color.setHex(E.color !== undefined ? E.color : PAL.emberOrange);
+        rg.from = E.ringFrom || 1.2;
+        rg.to = E.ringTo || 20;
+        rg.life = rg.maxLife = E.ringLife || 0.7;
+        rg.mesh.material.opacity = 0.9;
+        rg.mesh.visible = true;
+        rg.active = true;
+      }
+
+      /* 迸射火星（复用 spark 池） */
+      var sparkN = E.sparks || 28;
+      for (var i = 0; i < sparkN; i++) {
+        var sk = R._acquire(R._sparks);
+        if (!sk) break;
+        sk.vel.set(U.rand(-1, 1), U.rand(0.2, 1.4), U.rand(-1, 1)).normalize();
+        sk.vel.multiplyScalar((E.radius || 9) * U.rand(0.5, 1.4));
+        sk.sprite.position.copy(pos);
+        sk.sprite.material.color.setHex(i % 3 === 0 ? (E.color || PAL.emberOrange) : PAL.windowWarm);
+        sk.size = U.rand(0.6, 1.5);
+        sk.life = sk.maxLife = (E.ringLife || 0.7) * U.rand(0.6, 1.1);
+        sk.sprite.material.opacity = 1;
+        sk.sprite.visible = true;
+        sk.active = true;
+      }
+
+      /* 上升烟尘（复用 dust 池） */
+      var dustN = E.dustCount || 14;
+      for (var d = 0; d < dustN; d++) {
+        var du = R._acquire(R._dusts);
+        if (!du) break;
+        du.sprite.position.set(pos.x + U.rand(-2, 2), pos.y + U.rand(-1, 2), pos.z + U.rand(-2, 2));
+        du.vel.set(U.rand(-1.5, 1.5), U.rand(1.5, 4.0), U.rand(-1.5, 1.5));
+        du.size = U.rand(5, 10);
+        du.life = du.maxLife = U.rand(1.0, 2.0);
+        du.sprite.material.color.setHex(E.smokeColor !== undefined ? E.smokeColor : PAL.smoke);
+        du.sprite.material.opacity = 0.55;
+        du.sprite.visible = true;
+        du.active = true;
+      }
+
+      /* 强点光 */
+      R._pulseFxLight(pos, E.color || PAL.emberOrange, E.light || 30, E.lightLife || 0.5);
+    },
+
+    /* =======================================================================
+     * spawnShieldRipple(position, color)
+     *   P2 护盾波纹：格挡命中瞬间，受击点展开一圈半透明能量环（水平 + 略带垂直）。
+     *   取自 ART_CONFIG.fx.shield。纯渲染层。
+     * ==================================================================== */
+    spawnShieldRipple: function (position, color) {
+      if (!position) return;
+      var S = (FXCFG.shield) || {};
+      var pos = R._pos(position);
+      var sh = R._acquire(R._shields);
+      if (!sh) return;
+      sh.mesh.position.copy(pos);
+      sh.mesh.rotation.set(Math.PI * 0.5, 0, 0);   // 水平展开
+      sh.mesh.material.color.setHex(color !== undefined ? color : (S.color || 0x6fd0ff));
+      sh.from = S.radiusFrom || 2.0;
+      sh.to = S.radiusTo || 7.5;
+      sh.life = sh.maxLife = S.life || 0.5;
+      sh.mesh.material.opacity = S.opacity !== undefined ? S.opacity : 0.7;
+      sh.mesh.visible = true;
+      sh.active = true;
+    },
+
+    /* =======================================================================
+     * startTrail(unit, color) / endTrail(unit)
+     *   P2 攻击拖尾：追踪 unit 右臂（fistR/forearmR/armR，找不到则用命中中心+前向），
+     *   生成一条带状几何体拖尾。纯渲染层，不触碰 unit.position / 物理。
+     *   unit 只读取其 root / getHitCenter / yaw / facing / position。
+     * ==================================================================== */
+    startTrail: function (unit, color) {
+      if (!unit || !(FXCFG.trail && FXCFG.trail.enabled)) return;
+      /* 若该 unit 已有活跃拖尾，先重置 */
+      R.endTrail(unit);
+      var slot = R._acquire(R._trails);
+      if (!slot) return;
+      slot.unit = unit;
+      slot.color = color;
+      slot.active = true;
+      slot.head.copy(R._trailHeadPos(unit));
+      /* 初始化所有段都在 head，避免出现从原点拉出的直线 */
+      for (var i = 0; i < slot.points.length; i++) slot.points[i].copy(slot.head);
+      slot.age = 0;
+      slot.mesh.visible = true;
+    },
+    endTrail: function (unit) {
+      for (var i = 0; i < R._trails.length; i++) {
+        var t = R._trails[i];
+        if (t.active && t.unit === unit) { t.active = false; t.unit = null; t.mesh.visible = false; }
+      }
+    },
+
+    /* =======================================================================
+     * cameraShake(intensity|level) —— 叠加式屏幕震动
+     *   兼容旧签名：数值 > 0 且 <=4 视为分级 level（读 ART_CONFIG.fx.shake.tiers）；
+     *   其他数值视为原始强度。上限 CONFIG.camera.shake.max。
      * ==================================================================== */
     cameraShake: function (intensity) {
-      var add = (intensity === undefined ? 0.5 : intensity) * 0.6;
-      R._shake = U.clamp(R._shake + add, 0, CAM.shake.max);
+      var v;
+      if (typeof intensity === 'number' && intensity >= 1 && intensity <= 4 &&
+          FXCFG.shake && FXCFG.shake.tiers && FXCFG.shake.tiers[intensity]) {
+        v = FXCFG.shake.tiers[intensity];                // 分级：1 轻 / 2 重 / 3 必杀 / 4 建筑
+      } else {
+        v = (intensity === undefined ? 0.5 : intensity) * 0.6;
+      }
+      R._shake = U.clamp(R._shake + v, 0, CAM.shake.max);
     },
+    /* 便捷：分级震动 */
+    cameraShakeLevel: function (level) { R.cameraShake(level); },
 
     /* =======================================================================
-     * zoomPunch() —— 触发必杀技镜头小幅拉近（CONFIG.camera.ultimateZoom）
+     * zoomPunch() —— 触发必杀技镜头拉近（P2：支持 fovKick 冲击）
+     *   参数取自 ART_CONFIG.fx.zoom。
      * ==================================================================== */
     zoomPunch: function () {
+      if (!(FXCFG.zoom && FXCFG.zoom.enabled)) return;
       R._zoomActive = true;
       R._zoomT = 0;
+      R._fovBase = R.camera ? R.camera.fov : CAM.fov;
+      R._fovKick = (FXCFG.zoom.fovKick !== undefined) ? FXCFG.zoom.fovKick : 0;
     },
 
     /* =======================================================================
@@ -396,10 +545,19 @@
       var need = span / (vTan * Math.max(0.4, cam.aspect));
       var dist = U.clamp(need, CAM.minDistance, CAM.maxDistance);
 
-      R._dist = U.damp(R._dist, dist, CAM.distLerp, dt);
-      R._midX = U.damp(R._midX, midX, CAM.followLerp, dt);
+      /* P2：跟随参数取自 ART_CONFIG.fx.follow（位置/距离/高度 lerp + 死区） */
+      var F = (FXCFG.follow) || {};
+      var posLerp = F.positionLerp !== undefined ? F.positionLerp : CAM.followLerp;
+      var distLerp = F.distanceLerp !== undefined ? F.distanceLerp : CAM.distLerp;
+      var hLerp = F.heightLerp !== undefined ? F.heightLerp : CAM.heightLerp;
+      var dead = F.deadZone !== undefined ? F.deadZone : 0;
+      /* 死区：目标中点位移小于 dead 时不跟随，减少微抖 */
+      if (Math.abs(midX - R._midX) < dead) midX = R._midX;
+
+      R._dist = U.damp(R._dist, dist, distLerp, dt);
+      R._midX = U.damp(R._midX, midX, posLerp, dt);
       var wantY = CAM.height + Math.max(0, topY - CAM.lookHeight) * 0.35;
-      R._camY = U.damp(R._camY, wantY, CAM.heightLerp, dt);
+      R._camY = U.damp(R._camY, wantY, hLerp, dt);
 
       /* 必杀镜头缩放因子（在 update 中推进） */
       var zf = R._zoomFactor();
@@ -409,16 +567,19 @@
 
       cam.position.set(R._midX, R._camY, z);
 
-      /* 震动偏移（加法） */
+      /* 震动偏移（加法）；P2 衰减/旋转系数取自 ART_CONFIG.fx.shake */
       var amt = R._shake;
       var rotZ = 0;
+      var sh = (FXCFG.shake) || {};
+      var decay = sh.decay !== undefined ? sh.decay : CAM.shake.decay;
+      var rotScale = sh.rotScale !== undefined ? sh.rotScale : (CAM.shake.rotScale * 0.02);
       if (amt > 0.001) {
         var t = R._elapsed * 26 + R._shakeSeed;
         cam.position.x += Math.sin(t * 1.7) * amt;
         cam.position.y += Math.cos(t * 2.3) * amt * 0.7;
         cam.position.z += Math.sin(t * 1.3) * amt * 0.2;
-        rotZ = Math.sin(t * 2.1) * amt * CAM.shake.rotScale * 0.02;
-        R._shake = Math.max(0, amt * Math.exp(-CAM.shake.decay * dt));
+        rotZ = Math.sin(t * 2.1) * amt * rotScale;
+        R._shake = Math.max(0, amt * Math.exp(-decay * dt));
       } else {
         R._shake = 0;
       }
@@ -442,6 +603,7 @@
 
       R._updateUnitLights(R._elapsed);
       R._updateFx(dt);
+      R._updateTrails(dt);
       R._updateDebris(dt);
 
       /* 同步 Ammo 刚体变换到碎片网格（渲染器只做同步，步进由主循环负责） */
@@ -504,6 +666,14 @@
       for (i = 0; i < R._flashes.length; i++) if (R._flashes[i].sprite.material) R._flashes[i].sprite.material.dispose();
       for (i = 0; i < R._dusts.length; i++) if (R._dusts[i].sprite.material) R._dusts[i].sprite.material.dispose();
       for (i = 0; i < R._rings.length; i++) if (R._rings[i].mesh.material) R._rings[i].mesh.material.dispose();
+      for (i = 0; i < R._shields.length; i++) {
+        if (R._shields[i].mesh.material) R._shields[i].mesh.material.dispose();
+        if (R._shields[i].mesh.geometry) R._shields[i].mesh.geometry.dispose();
+      }
+      for (i = 0; i < R._trails.length; i++) {
+        if (R._trails[i].mesh.material) R._trails[i].mesh.material.dispose();
+        if (R._trails[i].mesh.geometry) R._trails[i].mesh.geometry.dispose();
+      }
       if (R._ringGeo) R._ringGeo.dispose();
       if (R._glowTex) R._glowTex.dispose();
 
@@ -511,6 +681,7 @@
       if (R.renderer) R.renderer.dispose();
 
       R._sparks.length = 0; R._flashes.length = 0; R._dusts.length = 0; R._rings.length = 0;
+      R._shields.length = 0; R._trails.length = 0;
       R._unitHandles.length = 0; R._debris.length = 0;
       return R;
     },
@@ -691,6 +862,50 @@
         group.add(rmesh);
         R._rings.push({ mesh: rmesh, life: 0, maxLife: 1, active: false, from: 1, to: 1 });
       }
+
+      /* P2 护盾波纹池（水平能量环，NormalBlending + Additive） */
+      for (i = 0; i < FX.shield; i++) {
+        var sm2 = new THREE.MeshBasicMaterial({ color: 0x6fd0ff, transparent: true, opacity: 0, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
+        var sgeo = new THREE.RingGeometry(0.6, 1, 48);
+        var smesh = new THREE.Mesh(sgeo, sm2);
+        smesh.rotation.x = Math.PI * 0.5;
+        smesh.visible = false;
+        group.add(smesh);
+        R._shields.push({ mesh: smesh, life: 0, maxLife: 1, active: false, from: 1, to: 1 });
+      }
+
+      /* P2 攻击拖尾池：每条 = 一条带状几何体（segments 段 * 2 顶点），
+         顶点位置在 update 中按 head 世界坐标重写。 */
+      var T = (FXCFG.trail) || {};
+      var seg = Math.max(4, (T.segments || 16) | 0);
+      var trailGeo = new THREE.BufferGeometry();
+      var positions = new Float32Array(seg * 2 * 3);
+      var colors = new Float32Array(seg * 2 * 3);
+      var indices = [];
+      for (var s = 0; s < seg - 1; s++) {
+        var a = s * 2, b = s * 2 + 1, c = s * 2 + 2, d = s * 2 + 3;
+        indices.push(a, c, b, b, c, d);
+      }
+      trailGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      trailGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      trailGeo.setIndex(indices);
+      trailGeo.computeBoundingSphere();
+      for (i = 0; i < FX.trail; i++) {
+        var tm = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false, vertexColors: true, fog: false });
+        var tmesh = new THREE.Mesh(trailGeo, tm);
+        tmesh.visible = false;
+        tmesh.frustumCulled = false;
+        group.add(tmesh);
+        var pts = [];
+        for (var p = 0; p < seg; p++) pts.push(new THREE.Vector3());
+        R._trails.push({
+          mesh: tmesh, unit: null, color: 0x6fd0ff, active: false, age: 0,
+          head: new THREE.Vector3(), points: pts, seg: seg,
+          positions: positions.slice(), colors: colors.slice()
+        });
+      }
+      R._trailSeg = seg;
+
       for (i = 0; i < R._fxLightCount; i++) {
         if (R._lights.point >= RENDER.maxLights.point) break;
         var l = new THREE.PointLight(PAL.emberOrange, 0, 60, 2);
@@ -937,6 +1152,19 @@
         it.mesh.material.opacity = (1 - k) * 0.9;
       }
 
+      /* P2 护盾波纹：径向扩散 + 淡出 */
+      for (i = 0; i < R._shields.length; i++) {
+        it = R._shields[i];
+        if (!it.active) continue;
+        it.life -= dt;
+        if (it.life <= 0) { it.active = false; it.mesh.visible = false; continue; }
+        var kk = 1 - it.life / it.maxLife;
+        var ee = 1 - (1 - kk) * (1 - kk);
+        s = U.lerp(it.from, it.to, ee);
+        it.mesh.scale.set(s, s, s);
+        it.mesh.material.opacity = (1 - kk) * 0.7;
+      }
+
       for (i = 0; i < R._fxLights.length; i++) {
         it = R._fxLights[i];
         if (!it.active) continue;
@@ -944,6 +1172,99 @@
         if (it.life <= 0) { it.active = false; it.light.intensity = 0; continue; }
         it.light.intensity = it.base * (it.life / it.maxLife);
       }
+    },
+
+    /* =======================================================================
+     * P2 攻击拖尾：每帧采样 unit 右臂世界坐标 → 推进带状几何体顶点
+     * ==================================================================== */
+    _trailHeadPos: function (unit) {
+      if (!unit) return R._tmp.set(0, 0, 0);
+      var root = unit.root;
+      /* 优先追踪右臂（fistR → forearmR → armR），找不到则用命中中心 + 前向偏移 */
+      var anchor = null;
+      if (root && root.getObjectByName) {
+        anchor = root.getObjectByName('fistR') || root.getObjectByName('forearmR') || root.getObjectByName('armR');
+      }
+      if (anchor) {
+        anchor.getWorldPosition(R._tmp);
+      } else {
+        var c = unit.getHitCenter ? unit.getHitCenter() : unit.position;
+        var fwdX = Math.cos(unit.yaw || 0), fwdZ = Math.sin(unit.yaw || 0);
+        R._tmp.set(c.x + fwdX * 3.0, c.y + 0.5, c.z + fwdZ * 3.0);
+      }
+      return R._tmp;
+    },
+    _updateTrails: function (dt) {
+      var T = (FXCFG.trail) || {};
+      var life = T.life || 0.22;
+      var w = T.width || 1.6;
+      var wf = T.widthFalloff !== undefined ? T.widthFalloff : 0.25;
+      var opacity = T.opacity !== undefined ? T.opacity : 0.85;
+      var cam = R.camera;
+
+      for (var i = 0; i < R._trails.length; i++) {
+        var tr = R._trails[i];
+        if (!tr.active) continue;
+        /* 已无对应单位（被回收）：渐隐收尾 */
+        if (!tr.unit) {
+          tr.age += dt;
+          if (tr.age > life) { tr.active = false; tr.mesh.visible = false; }
+          R._buildTrailMesh(tr, w, wf, opacity, cam, false);
+          continue;
+        }
+        /* 采样新 head，并把所有段向后推（段 0 = 最新 head） */
+        var head = R._trailHeadPos(tr.unit);
+        tr.head.copy(head);
+        for (var j = tr.points.length - 1; j > 0; j--) tr.points[j].copy(tr.points[j - 1]);
+        tr.points[0].copy(head);
+        tr.age = 0;
+        R._buildTrailMesh(tr, w, wf, opacity, cam, true);
+      }
+    },
+    /* 把 points[] 写成带状几何体顶点（左右两条边 + 顶点色渐变） */
+    _buildTrailMesh: function (tr, width, widthFalloff, opacity, cam, visible) {
+      var geo = tr.mesh.geometry;
+      var pos = geo.attributes.position.array;
+      var col = geo.attributes.color.array;
+      var n = tr.points.length;
+      var cx = cam ? cam.position.x : 0, cy = cam ? cam.position.y : 0, cz = cam ? cam.position.z : 0;
+      var colR = ((tr.color >> 16) & 255) / 255;
+      var colG = ((tr.color >> 8) & 255) / 255;
+      var colB = (tr.color & 255) / 255;
+      for (var i = 0; i < n; i++) {
+        var p = tr.points[i];
+        /* 法线方向：cross(段方向, 视线方向)，得到屏幕空间宽度方向 */
+        var nx, ny, nz;
+        if (i < n - 1) {
+          nx = p.x - tr.points[i + 1].x;
+          ny = p.y - tr.points[i + 1].y;
+          nz = p.z - tr.points[i + 1].z;
+        } else {
+          nx = p.x - tr.points[i - 1].x;
+          ny = p.y - tr.points[i - 1].y;
+          nz = p.z - tr.points[i - 1].z;
+        }
+        var vx = cx - p.x, vy = cy - p.y, vz = cz - p.z;
+        /* cross(n, v) */
+        var px = ny * vz - nz * vy;
+        var py = nz * vx - nx * vz;
+        var pz = nx * vy - ny * vx;
+        var pl = Math.sqrt(px * px + py * py + pz * pz) || 1;
+        px /= pl; py /= pl; pz /= pl;
+        var half = width * (i === 0 ? 1 : U.lerp(1, widthFalloff, i / (n - 1))) * 0.5;
+        var a = i * 2 * 3;
+        pos[a] = p.x + px * half;     pos[a + 1] = p.y + py * half;     pos[a + 2] = p.z + pz * half;
+        pos[a + 3] = p.x - px * half; pos[a + 4] = p.y - py * half;     pos[a + 5] = p.z - pz * half;
+        /* 顶点色：越靠近尾部越暗（模拟能量消散） */
+        var f = U.clamp(1 - i / (n - 1), 0, 1);
+        col[a] = colR * f; col[a + 1] = colG * f; col[a + 2] = colB * f;
+        col[a + 3] = colR * f; col[a + 4] = colG * f; col[a + 5] = colB * f;
+      }
+      geo.attributes.position.needsUpdate = true;
+      geo.attributes.color.needsUpdate = true;
+      geo.computeBoundingSphere();
+      tr.mesh.material.opacity = visible ? opacity : 0;
+      tr.mesh.visible = visible;
     },
 
     /* 碎片：Ammo 模式下由 Physics 驱动并回收；不可用时走运动学回退 */
@@ -1007,19 +1328,36 @@
       }
     },
 
-    /* 必杀镜头缩放推进与因子 */
+    /* 必杀镜头缩放推进与因子（P2：参数取自 ART_CONFIG.fx.zoom，含 fovKick） */
     _advanceZoom: function (dt) {
       if (!R._zoomActive) return;
       R._zoomT += dt;
-      var ut = CAM.ultimateZoom;
-      if (R._zoomT > ut.time * 2 + ut.hold) { R._zoomActive = false; R._zoomT = 0; }
+      var z = (FXCFG.zoom) || {};
+      var inT = z.inTime !== undefined ? z.inTime : CAM.ultimateZoom.time;
+      var hold = z.hold !== undefined ? z.hold : CAM.ultimateZoom.hold;
+      var outT = z.outTime !== undefined ? z.outTime : CAM.ultimateZoom.time;
+      if (R._zoomT > inT + hold + outT) {
+        R._zoomActive = false; R._zoomT = 0;
+        if (R.camera && R._fovBase !== undefined) { R.camera.fov = R._fovBase; R.camera.updateProjectionMatrix(); }
+      } else if (R.camera && R._fovKick) {
+        /* fov kick：在拉近瞬间快速收窄 fov，再缓慢回到基准，增强冲击 */
+        var f = R._fovKick;
+        var k = Math.min(1, R._zoomT / Math.max(0.01, inT));
+        R.camera.fov = R._fovBase + f * (1 - k);
+        R.camera.updateProjectionMatrix();
+      }
     },
     _zoomFactor: function () {
       if (!R._zoomActive) return 1;
-      var ut = CAM.ultimateZoom, t = R._zoomT;
-      if (t < ut.time) return U.lerp(1, ut.scale, t / ut.time);
-      if (t < ut.time + ut.hold) return ut.scale;
-      return U.lerp(ut.scale, 1, Math.min(1, (t - ut.time - ut.hold) / ut.time));
+      var z = (FXCFG.zoom) || {};
+      var scale = z.scale !== undefined ? z.scale : CAM.ultimateZoom.scale;
+      var inT = z.inTime !== undefined ? z.inTime : CAM.ultimateZoom.time;
+      var hold = z.hold !== undefined ? z.hold : CAM.ultimateZoom.hold;
+      var outT = z.outTime !== undefined ? z.outTime : CAM.ultimateZoom.time;
+      var t = R._zoomT;
+      if (t < inT) return U.lerp(1, scale, t / inT);
+      if (t < inT + hold) return scale;
+      return U.lerp(scale, 1, Math.min(1, (t - inT - hold) / outT));
     }
   };
 
