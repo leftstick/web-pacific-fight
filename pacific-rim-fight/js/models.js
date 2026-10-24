@@ -275,10 +275,20 @@
         leg.rotation.z = (side === 'L' ? 1 : -1) * 0.02;
         Models._bevel(leg, H * 0.085 * w, thigh, H * 0.09 * w, armor, 0, -thigh * 0.5, 0);   // 大腿（倒角装甲）
         Models._box(leg, H * 0.06 * w, thigh * 0.5, H * 0.1 * w, accent, 0, -thigh * 0.2, 0); // 髋侧甲
+        /* 大腿液压杆（后侧双活塞） */
+        for (var tp = -1; tp <= 1; tp += 2) {
+          Models._cyl(leg, H * 0.009, H * 0.009, thigh * 0.6, dark, tp * H * 0.03 * w, -thigh * 0.5, -H * 0.045 * w, 6);
+          Models._cyl(leg, H * 0.013, H * 0.013, H * 0.06, accent, tp * H * 0.03 * w, -thigh * 0.82, -H * 0.045 * w, 6);
+        }
         var knee = Models._part('shin' + side, leg, 0, -thigh, 0);
         Models._cyl(knee, H * 0.05, H * 0.05, H * 0.06, dark, 0, 0, 0, 10);
         Models._bevel(knee, H * 0.07 * w, shin, H * 0.075 * w, armor, 0, -shin * 0.5, 0);    // 小腿（倒角装甲）
         Models._box(knee, H * 0.075 * w, H * 0.03, H * 0.085 * w, accent, 0, 0.01, H * 0.005); // 膝甲
+        /* 小腿液压杆（后侧双活塞，体现机甲机械结构） */
+        for (var lp = -1; lp <= 1; lp += 2) {
+          Models._cyl(knee, H * 0.008, H * 0.008, shin * 0.7, dark, lp * H * 0.025 * w, -shin * 0.4, -H * 0.04 * w, 6);
+          Models._cyl(knee, H * 0.012, H * 0.012, H * 0.05, accent, lp * H * 0.025 * w, -shin * 0.78, -H * 0.04 * w, 6);
+        }
         var foot = Models._part('foot' + side, knee, 0, -shin, 0);
         Models._box(foot, H * 0.1 * w, H * 0.04, H * 0.14 * w, dark, 0, H * 0.02, H * 0.02);
         Models._box(foot, H * 0.105 * w, H * 0.02, H * 0.05, glowWarm, 0, H * 0.04, H * 0.07); // 足部灯带
@@ -296,10 +306,21 @@
       Models._bevel(body, H * 0.21 * w, H * 0.19, H * 0.135 * w, armor, 0, H * 0.1, 0);       // 胸腔（倒角装甲）
       Models._bevel(body, H * 0.235 * w, H * 0.045, H * 0.145 * w, accent, 0, H * 0.20, 0);   // 肩桥（倒角装甲）
       Models._box(body, H * 0.09 * w, H * 0.16, H * 0.02, dark, 0, H * 0.1, H * 0.072 * w);    // 胸口面板
-      /* 胸口反应堆（自发光核心） */
+      /* 胸口反应堆（自发光核心）—— 环太平洋标志性核反应堆，加大并加多层环 */
       var core = Models._part('reactor', body, 0, H * 0.115, H * 0.055 * w);
-      Models._cyl(core, H * 0.055, H * 0.055, H * 0.03, glow, 0, 0, 0, 18).rotation.x = Math.PI / 2;
-      Models._cyl(core, H * 0.075, H * 0.075, H * 0.012, dark, 0, 0, -H * 0.008, 18).rotation.x = Math.PI / 2;
+      /* 外环装甲圈 */
+      Models._cyl(core, H * 0.09, H * 0.09, H * 0.018, dark, 0, 0, -H * 0.005, 24).rotation.x = Math.PI / 2;
+      /* 中环（金属） */
+      Models._cyl(core, H * 0.072, H * 0.072, H * 0.02, accent, 0, 0, 0.002, 24).rotation.x = Math.PI / 2;
+      /* 内环（发光） */
+      Models._cyl(core, H * 0.05, H * 0.05, H * 0.03, glow, 0, 0, H * 0.012, 20).rotation.x = Math.PI / 2;
+      /* 最亮核心点 */
+      Models._cyl(core, H * 0.024, H * 0.024, H * 0.02, Models._glowMat(0xffffff, 3.2), 0, 0, H * 0.026, 12).rotation.x = Math.PI / 2;
+      /* 胸侧冷却管（左右各一根，从肩部连向反应堆） */
+      for (var cp = -1; cp <= 1; cp += 2) {
+        Models._cyl(body, H * 0.012, H * 0.012, H * 0.16, dark, cp * H * 0.1 * w, H * 0.13, H * 0.03 * w, 8).rotation.z = cp * 0.35;
+        Models._box(body, H * 0.018, H * 0.04, H * 0.03, accent, cp * H * 0.115 * w, H * 0.05, H * 0.04 * w);
+      }
       /* 背部散热口 + 背包 */
       Models._box(body, H * 0.17 * w, H * 0.15, H * 0.08, dark, 0, H * 0.11, -H * 0.09 * w);
       for (var v = -1; v <= 1; v += 2) {
@@ -310,19 +331,26 @@
         Models._box(body, H * 0.05 * w, H * 0.09, H * 0.05, accent, k * H * 0.115 * w, -H * 0.01, 0);
       }
 
-      /* --- 头部 --- */
+      /* --- 头部（Conn-Pod 驾驶舱：宽面罩 + 天线/脊冠，环太平洋标志性设计）--- */
       var head = Models._part('head', body, 0, H * 0.245, 0);
       if (heavy) {
-        var dome = new THREE.Mesh(new THREE.SphereGeometry(H * 0.055, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.62), armor);
-        dome.castShadow = true; head.add(dome);
-        Models._box(head, H * 0.1, H * 0.045, H * 0.11, accent, 0, H * 0.01, 0);
-        Models._box(head, H * 0.075, H * 0.012, H * 0.01, glow, 0, -H * 0.012, H * 0.05);   // 眼带
-        for (var r = -1; r <= 1; r += 2) Models._cyl(head, H * 0.012, H * 0.012, H * 0.06, dark, r * H * 0.045, 0.01, 0, 6).rotation.z = Math.PI / 2;
+        /* 重击型：宽扁盒状驾驶舱（切尔诺·阿尔法风格），单条宽面罩 */
+        Models._box(head, H * 0.12, H * 0.08, H * 0.12, armor, 0, 0, 0);
+        Models._box(head, H * 0.125, H * 0.03, H * 0.125, accent, 0, H * 0.03, 0);        // 顶盖
+        Models._box(head, H * 0.11, H * 0.014, H * 0.018, glow, 0, -H * 0.005, H * 0.062); // 宽面罩发光条
+        Models._box(head, H * 0.018, H * 0.04, H * 0.018, dark, -H * 0.05, H * 0.04, 0);  // 左侧通讯柱
+        Models._box(head, H * 0.018, H * 0.04, H * 0.018, dark, H * 0.05, H * 0.04, 0);   // 右侧通讯柱
+        /* 顶部圆柱状反应堆排热口 */
+        Models._cyl(head, H * 0.03, H * 0.03, H * 0.03, dark, 0, H * 0.06, 0, 10);
       } else {
+        /* 均衡型：流线型驾驶舱，带 V 型脊冠 + 双天线（赤红风暴/吉普赛风格） */
         Models._box(head, H * 0.085, H * 0.07, H * 0.1, armor, 0, 0, 0);
-        Models._box(head, H * 0.09, H * 0.012, H * 0.02, glow, 0, H * 0.004, H * 0.05);      // 面罩发光条
-        Models._box(head, H * 0.06, H * 0.02, H * 0.03, accent, 0, H * 0.045, H * 0.005);
-        Models._box(head, H * 0.03, H * 0.04, H * 0.02, dark, 0, -H * 0.03, H * 0.045);
+        Models._box(head, H * 0.075, H * 0.02, H * 0.03, accent, 0, H * 0.045, H * 0.005); // 脊冠基座
+        Models._box(head, H * 0.012, H * 0.035, H * 0.012, accent, 0, H * 0.07, 0);        // 中央天线
+        Models._box(head, H * 0.01, H * 0.025, H * 0.01, dark, -H * 0.035, H * 0.055, 0);  // 左天线
+        Models._box(head, H * 0.01, H * 0.025, H * 0.01, dark, H * 0.035, H * 0.055, 0);   // 右天线
+        Models._box(head, H * 0.09, H * 0.012, H * 0.02, glow, 0, H * 0.004, H * 0.05);    // 面罩发光条
+        Models._box(head, H * 0.03, H * 0.04, H * 0.02, dark, 0, -H * 0.03, H * 0.045);    // 下颚
       }
 
       /* --- 双臂 + 武器 --- */
@@ -333,6 +361,9 @@
         Models._box(shoulder, shW, H * 0.055, H * 0.11 * w, accent, sgn * H * 0.01, 0, 0);
         Models._bevel(shoulder, shW * 0.75, H * 0.09, H * 0.1 * w, armor, sgn * H * 0.015, -H * 0.02, 0);  // 肩甲（倒角装甲）
         Models._box(shoulder, H * 0.02, H * 0.02, H * 0.02, glow, sgn * H * 0.045, 0.005, 0);           // 肩灯
+        /* 大型肩甲外板（Tasset，向外下延伸，环太平洋标志性宽肩轮廓） */
+        Models._bevel(shoulder, shW * 0.9, H * 0.12, H * 0.13 * w, accent, sgn * H * 0.05, -H * 0.04, -H * 0.01 * w);
+        Models._box(shoulder, shW * 0.5, H * 0.025, H * 0.04, glow, sgn * H * 0.06, -H * 0.08, -H * 0.04 * w); // 肩甲灯带
         var arm = Models._part('arm' + side, shoulder, 0, -H * 0.03, 0);
         Models._cyl(arm, H * 0.035, H * 0.032, H * 0.19, armor, 0, -H * 0.095, 0, 10);   // 上臂
         Models._cyl(arm, H * 0.02, H * 0.02, H * 0.03, dark, 0, -H * 0.19, 0, 8);        // 肘关节
@@ -342,20 +373,46 @@
         Models._box(fore, H * 0.015, H * 0.015, H * 0.05, glow, 0, -H * 0.145, H * 0.04);
         var fist = Models._part('fist' + side, fore, 0, -H * 0.175, 0);
         Models._box(fist, H * 0.07, H * 0.06, H * 0.07, dark, 0, -H * 0.03, 0);
-        /* 武器：右臂实体刀刃，左臂机炮（重击型换成链拳/重炮） */
-        if (side === 'R' && def.weapon.type === 'blade') {
-          var blade = new THREE.Mesh(new THREE.BoxGeometry(H * 0.02, H * 0.34, H * 0.09), Models._mat(0xb9c4cc, { metalness: 1, roughness: 0.25 }));
-          blade.position.set(0, -H * 0.18, H * 0.06); blade.castShadow = true;
-          fore.add(blade);
-          var edge = Models._box(fore, H * 0.012, H * 0.33, H * 0.012, glow, 0, -H * 0.18, H * 0.105);
-          edge.material = glow;
+        /* 武器：右臂主武器，左臂副武器（重击型换重拳/重炮） */
+        if (side === 'R') {
+          if (def.weapon.type === 'blade') {
+            /* 等离子链锯：腕部旋转圆盘 + 带锯齿的能量刃 */
+            var hub = Models._cyl(fore, H * 0.05, H * 0.05, H * 0.02, dark, 0, -H * 0.17, H * 0.05, 16);
+            hub.rotation.x = Math.PI / 2;
+            var disc = new THREE.Mesh(new THREE.CylinderGeometry(H * 0.075, H * 0.075, H * 0.012, 16), Models._mat(0xb9c4cc, { metalness: 1, roughness: 0.2 }));
+            disc.position.set(0, -H * 0.17, H * 0.055); disc.rotation.x = Math.PI / 2; disc.castShadow = true;
+            fore.add(disc);
+            /* 锯齿刃（多个小三角沿刃边排列） */
+            for (var s = 0; s < 6; s++) {
+              Models._box(fore, H * 0.01, H * 0.02, H * 0.015, Models._mat(0xdfe6ec, { metalness: 1, roughness: 0.2 }),
+                (s - 2.5) * H * 0.012, -H * 0.17 - s * H * 0.045, H * 0.11 + s * H * 0.002);
+            }
+            var edge = Models._box(fore, H * 0.012, H * 0.33, H * 0.012, glow, 0, -H * 0.18, H * 0.105);
+            edge.material = glow;
+          } else if (def.weapon.type === 'cannon') {
+            /* 腕部重型炮管 */
+            var barrel = Models._cyl(fore, H * 0.035, H * 0.03, H * 0.16, dark, 0, -H * 0.16, H * 0.08, 12);
+            barrel.rotation.x = Math.PI / 2;
+            Models._cyl(fore, H * 0.045, H * 0.045, H * 0.04, accent, 0, -H * 0.12, H * 0.04, 12);
+            Models._cyl(fore, H * 0.02, H * 0.02, H * 0.03, glowWarm, 0, -H * 0.16, H * 0.17, 8).rotation.x = Math.PI / 2;
+          }
         }
         if (side === 'L') {
-          var gunBody = Models._box(fore, H * 0.06, H * 0.06, H * 0.1, dark, 0, -H * 0.12, H * 0.05);
-          for (var b = -1; b <= 1; b += 2) {
-            Models._cyl(fore, H * 0.012, H * 0.012, H * 0.12, Models._mat(0x22282d, { metalness: 1 }), b * H * 0.018, -H * 0.12, H * 0.1, 8).rotation.x = Math.PI / 2;
+          /* 左臂：副武器 —— 均衡型为等离子炮，重击型为震波拳套 */
+          if (heavy) {
+            /* 震波拳套：加大拳头 + 指节冲击器 */
+            Models._box(fist, H * 0.1, H * 0.08, H * 0.1, accent, 0, -H * 0.03, 0);
+            for (var kn = -1; kn <= 1; kn += 2) {
+              Models._box(fist, H * 0.022, H * 0.022, H * 0.022, Models._mat(0x3a3f44, { metalness: 1 }), kn * H * 0.028, -H * 0.065, H * 0.04);
+            }
+            Models._box(fist, H * 0.04, H * 0.015, H * 0.015, glowWarm, 0, -H * 0.07, H * 0.052);
+          } else {
+            var gunBody = Models._box(fore, H * 0.06, H * 0.06, H * 0.1, dark, 0, -H * 0.12, H * 0.05);
+            for (var b = -1; b <= 1; b += 2) {
+              Models._cyl(fore, H * 0.012, H * 0.012, H * 0.12, Models._mat(0x22282d, { metalness: 1 }), b * H * 0.018, -H * 0.12, H * 0.1, 8).rotation.x = Math.PI / 2;
+            }
+            Models._box(fore, H * 0.05, H * 0.04, H * 0.04, glowWarm, 0, -H * 0.12, H * 0.13);
           }
-          Models._box(fore, H * 0.05, H * 0.04, H * 0.04, glowWarm, 0, -H * 0.12, H * 0.13);
         }
       });
 

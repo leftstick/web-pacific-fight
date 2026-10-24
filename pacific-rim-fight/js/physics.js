@@ -143,6 +143,8 @@
         .then(function (mod) {
           if (!mod) { self.available = false; self.world = null; return false; }
           ammoLib = mod;
+          /* 复用的临时变换：兼容不同 ammo.js 绑定（getWorldTransform 是否接收参数） */
+          try { self._tmpTransform = new mod.btTransform(); } catch (e) { self._tmpTransform = null; }
           try {
             self.initWorld();
             self.available = true;
@@ -328,15 +330,38 @@
     _syncHandle: function (h) {
       if (!h || !h.mesh) return;
       var mesh = h.mesh;
-      if (this.available && h.body && h.motionState) {
-        var tr = h.motionState.getWorldTransform();
-        var o = tr.getOrigin();
-        var r = tr.getRotation();
-        if (mesh.position && mesh.position.set) mesh.position.set(o.x(), o.y(), o.z());
-        if (mesh.quaternion && mesh.quaternion.set) mesh.quaternion.set(r.x(), r.y(), r.z(), r.w());
-      } else if (h.pos) {
+      if (this.available && h.body && h.motionState && !h._dead) {
+        var tr = this._readTransform(h);
+        if (tr) {
+          var o = tr.getOrigin();
+          var r = tr.getRotation();
+          if (o && mesh.position && mesh.position.set) mesh.position.set(o.x(), o.y(), o.z());
+          if (r && mesh.quaternion && mesh.quaternion.set) mesh.quaternion.set(r.x(), r.y(), r.z(), r.w());
+          return;
+        }
+        /* 读取失败：标记此句柄已失效，避免每帧重复报错 */
+        h._dead = true;
+      }
+      if (h.pos) {
         if (mesh.position && mesh.position.set) mesh.position.set(h.pos.x, h.pos.y, h.pos.z);
       }
+    },
+
+    /* 兼容式读取 motionState 变换：
+     *   部分 ammo.js 构建中 getWorldTransform() 直接返回变换；
+     *   部分必须传入一个 btTransform 由其写入。这里两种都支持。 */
+    _readTransform: function (h) {
+      if (!h || !h.motionState) return null;
+      var out = this._tmpTransform;
+      var ret;
+      try {
+        ret = h.motionState.getWorldTransform(out);
+      } catch (e) {
+        try { ret = h.motionState.getWorldTransform(); } catch (e2) { return null; }
+      }
+      var tr = ret || out;
+      if (!tr || typeof tr.getOrigin !== 'function') return null;
+      return tr;
     },
 
     /* =======================================================================
@@ -688,9 +713,12 @@
 
     /* 取得句柄当前原点（Ammo 走 motionState，回退走 pos） */
     _handleOrigin: function (h) {
-      if (this.available && h.body && h.motionState) {
-        var o = h.motionState.getWorldTransform().getOrigin();
-        return { x: o.x(), y: o.y(), z: o.z() };
+      if (this.available && h.body && h.motionState && !h._dead) {
+        var tr = this._readTransform(h);
+        if (tr) {
+          var o = tr.getOrigin();
+          if (o) return { x: o.x(), y: o.y(), z: o.z() };
+        }
       }
       if (h.pos) return h.pos;
       return null;

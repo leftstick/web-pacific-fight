@@ -71,13 +71,33 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* ---- 横屏容器：PC/横屏时铺满视口；移动端竖屏时旋转 90° 强制横屏 ---- */
+.landscape-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg-0);
+}
+/* 仅在「竖屏 + 触屏」时旋转：桌面端窄窗口不旋转，横屏手机也不旋转 */
+@media (orientation: portrait) and (pointer: coarse) {
+  .landscape-container {
+    width: 100vh;
+    height: 100vw;
+    transform: rotate(90deg) translate(0, -100%);
+    transform-origin: top left;
+  }
+}
+
 h1, h2, h3, p, ul, li { margin: 0; padding: 0; }
 ul { list-style: none; }
 button { font-family: inherit; }
 
 /* ---- ② 全屏特效（扫描线 / 暗角，纯装饰、不拦事件） --------------------- */
 .fx {
-  position: fixed;
+  position: absolute;
   inset: 0;
   pointer-events: none;
 }
@@ -98,7 +118,7 @@ button { font-family: inherit; }
 
 /* ---- ③ 画布（16:9 letterbox：宽高比固定，四周留黑边） ------------------- */
 #game-canvas {
-  position: fixed;
+  position: absolute;
   inset: 0;
   margin: auto;
   display: block;
@@ -112,7 +132,7 @@ button { font-family: inherit; }
 
 /* ---- ④ 通用：屏幕 / 面板 / 按钮 ---------------------------------------- */
 .screen {
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: 10;
   display: flex;
@@ -471,20 +491,53 @@ button { font-family: inherit; }
   gap: 8px;
   margin-top: 12px;
 }
-/* 候选项（ui.js 生成；也支持预先的静态占位） */
-.unit-list .unit-item {
-  padding: 5px 12px;
+/* 候选项（ui.js 生成 .select-item；也兼容预先的静态 .unit-item） */
+.unit-list .unit-item,
+.unit-list .select-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 6px 12px;
   font-size: clamp(11px, 0.95vw, 12px);
   letter-spacing: 0.06em;
   color: var(--muted);
   border: 1px solid rgba(111, 208, 255, 0.18);
   background: rgba(111, 208, 255, 0.05);
   cursor: pointer;
+  touch-action: manipulation;
+  transition: color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
 }
-.unit-list .unit-item.active {
+.unit-list .select-item .select-item-name { color: #cfe8ef; }
+.unit-list .select-item .select-item-tag {
+  font-size: 0.85em;
+  color: var(--muted);
+  opacity: 0.7;
+}
+.col-kaiju .unit-list .select-item {
+  border-color: rgba(255, 200, 107, 0.18);
+  background: rgba(255, 200, 107, 0.05);
+}
+.col-kaiju .unit-list .select-item .select-item-name { color: #ffe9c7; }
+.unit-list .unit-item:hover,
+.unit-list .select-item:hover {
   color: #eafaff;
   border-color: var(--cyan);
-  box-shadow: inset 0 0 12px rgba(111, 208, 255, 0.22);
+}
+.col-kaiju .unit-list .select-item:hover { border-color: var(--amber); color: #ffe9c7; }
+/* 选中态（ui.js 切换 .selected 类） */
+.unit-list .unit-item.active,
+.unit-list .unit-item.selected,
+.unit-list .select-item.selected {
+  color: #eafaff;
+  border-color: var(--cyan);
+  background: rgba(111, 208, 255, 0.16);
+  box-shadow: inset 0 0 12px rgba(111, 208, 255, 0.22), 0 0 10px rgba(111, 208, 255, 0.18);
+}
+.col-kaiju .unit-list .select-item.selected {
+  color: #ffe9c7;
+  border-color: var(--amber);
+  background: rgba(255, 200, 107, 0.16);
+  box-shadow: inset 0 0 12px rgba(255, 200, 107, 0.22), 0 0 10px rgba(255, 200, 107, 0.18);
 }
 
 /* 中列：VS 徽标 + 3D 预览宿主 */
@@ -784,7 +837,7 @@ button { font-family: inherit; }
 
 /* ---- P3 触屏控制：左虚拟摇杆 + 右动作按键 ---- */
 .touch-controls {
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: 70;
   pointer-events: none;            /* 整体不拦截，子元素各自 opt-in */
@@ -805,7 +858,7 @@ button { font-family: inherit; }
   touch-action: none;
 }
 .touch-joy-base {
-  position: fixed;
+  position: absolute;
   width: 120px; height: 120px;
   margin-left: -60px; margin-top: -60px;
   border-radius: 50%;
@@ -818,7 +871,7 @@ button { font-family: inherit; }
 }
 .touch-joy-base.on { opacity: 1; }
 .touch-joy-knob {
-  position: fixed;
+  position: absolute;
   width: 54px; height: 54px;
   margin-left: -27px; margin-top: -27px;
   border-radius: 50%;
@@ -834,13 +887,13 @@ button { font-family: inherit; }
 
 /* 按键区：右下角锚点，按钮用 vmin 相对视口定位，避免百分比容器挤压 */
 .touch-btns {
-  position: fixed;
+  position: absolute;
   right: 0; bottom: 0;
   width: 0; height: 0;
   pointer-events: none;
 }
 .touch-btn {
-  position: fixed;
+  position: absolute;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1098,7 +1151,7 @@ button { font-family: inherit; }
 
 /* ---- ⑫ 错误覆盖层 ------------------------------------------------------ */
 #error-overlay {
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: 300;
   display: flex;
@@ -1150,6 +1203,38 @@ button { font-family: inherit; }
   .menu-wrap { padding: 26px 16px; }
   .hud-side { width: 47%; }
   .fight-prompts { gap: 8px 12px; padding: 6px 10px; }
+}
+
+/* ---- ⑭ 移动端强制横屏后的布局修正 --------------------------------------
+   旋转后容器宽=100vh、高=100vw，而 vw/vh 仍取设备竖屏值。
+   因此把「横向尺寸用 vw」的地方换成 vh，并恢复选择界面三列横屏布局。
+   ---------------------------------------------------------------------- */
+@media (orientation: portrait) and (pointer: coarse) {
+  /* 画布：交换 vw/vh，使其以 16:9 撑满旋转后的容器 */
+  #game-canvas {
+    width: 100vh;
+    height: 56.25vh;            /* 100vh * 9/16 */
+    max-width: 177.78vw;        /* 100vw * 16/9 */
+    max-height: 100vw;
+  }
+  /* 面板宽度：横向用 vh（容器宽=100vh） */
+  .select-wrap { width: min(1200px, 96vh); max-height: 100%; padding: 12px; gap: 8px; }
+  .error-box { width: min(640px, 90vh); }
+  /* 选择界面保持三列横屏，不堆叠 */
+  .select-grid { grid-template-columns: 1fr 0.92fr 1fr !important; gap: 10px; }
+  .col-center { order: 0; }
+  .select-col { min-height: 0; padding: 12px; }
+  .col-center { min-height: 0; }
+  #select-preview { min-height: 0; aspect-ratio: 16 / 10; }
+  .unit-name { font-size: 16px; }
+  .unit-desc { min-height: 0; font-size: 12px; line-height: 1.5; }
+  .unit-stats { margin: 8px 0; gap: 5px; }
+  .unit-list { margin-top: 8px; gap: 6px; }
+  .vs-badge { font-size: 22px; }
+  .select-footer { flex-wrap: wrap; gap: 8px; }
+  /* 主菜单在横屏下紧凑 */
+  .menu-wrap { padding: 18px 24px; }
+  .menu-title h1 { font-size: clamp(20px, 3.4vh, 30px); }
 }
 </style>
 </head>
@@ -1211,6 +1296,13 @@ button { font-family: inherit; }
   });
 })(window, document);
 </script>
+
+<!-- ============================================================
+     横屏容器：移动端竖屏时整体旋转 90°，强制横屏显示。
+     所有可见 UI（画布 / 各 screen / 浮层 / 触屏控件）都必须
+     放在此容器内，以便共享同一旋转坐标系。
+     ============================================================ -->
+<div id="landscape-root" class="landscape-container">
 
 <!-- 全屏画布：16:9 letterbox，渲染器按 clientWidth/Height 自适应 -->
 <canvas id="game-canvas"></canvas>
@@ -1462,6 +1554,8 @@ button { font-family: inherit; }
     <pre id="error-message"></pre>
   </div>
 </div>
+
+</div><!-- /.landscape-container -->
 
 <!-- =========================================================================
      物理引擎：Ammo.js asm.js 构建（单文件、无独立 .wasm，双击亦可加载）

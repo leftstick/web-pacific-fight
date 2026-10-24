@@ -317,16 +317,19 @@
     touchEl.style.display = 'none';
     touchEl.setAttribute('aria-hidden', 'true');
 
-    /* 摇杆区（左半屏） */
+    /* 摇杆区（左半屏）—— 仅作为命中区域，底盘/旋钮挂在 touchEl 下，
+       以便用「容器内坐标」统一布局（横屏旋转后坐标一致） */
     var joyArea = doc.createElement('div');
     joyArea.className = 'touch-joy-area';
+    touchEl.appendChild(joyArea);
+
     joyBase = doc.createElement('div');
     joyBase.className = 'touch-joy-base';
+    touchEl.appendChild(joyBase);
+
     joyKnob = doc.createElement('div');
     joyKnob.className = 'touch-joy-knob';
-    joyArea.appendChild(joyBase);
-    joyArea.appendChild(joyKnob);
-    touchEl.appendChild(joyArea);
+    touchEl.appendChild(joyKnob);
 
     /* 按键区（右半屏） */
     var btns = doc.createElement('div');
@@ -351,9 +354,28 @@
     btns.appendChild(pauseBtn);
 
     touchEl.appendChild(btns);
-    doc.body.appendChild(touchEl);
+
+    /* 挂到横屏容器，使其随容器一起旋转（保持坐标系一致） */
+    var host = doc.getElementById('landscape-root') || doc.body;
+    host.appendChild(touchEl);
 
     bindTouchEvents(joyArea, btns);
+  }
+
+  /* 当前是否处于「视觉横屏」旋转状态（移动端竖屏 + 触屏） */
+  function isRotatedLandscape() {
+    return touchSupported && (typeof window !== 'undefined') &&
+      window.innerHeight > window.innerWidth;
+  }
+
+  /* 把视口坐标(clientX/Y)换算成横屏容器内的局部坐标。
+     旋转 90°(顺时针，原点左上)后：localX = clientY，localY = innerWidth - clientX。
+     未旋转时直接返回原值。 */
+  function toLocal(cx, cy) {
+    if (isRotatedLandscape()) {
+      return { x: cy, y: window.innerWidth - cx };
+    }
+    return { x: cx, y: cy };
   }
 
   function bindTouchEvents(joyArea, btns) {
@@ -366,19 +388,21 @@
       e.preventDefault();
       joyPointerId = e.pointerId;
       joyActive = true;
-      joyOrigin.x = e.clientX;
-      joyOrigin.y = e.clientY;
+      var p = toLocal(e.clientX, e.clientY);
+      joyOrigin.x = p.x;
+      joyOrigin.y = p.y;
       joyArea.setPointerCapture(e.pointerId);
       /* 底盘出现于触摸点 */
-      joyBase.style.left = joyOrigin.x + 'px';
-      joyBase.style.top = joyOrigin.y + 'px';
+      joyBase.style.left = p.x + 'px';
+      joyBase.style.top = p.y + 'px';
       joyBase.classList.add('on');
       joyKnob.classList.add('on');
       updateJoy(e.clientX, e.clientY);
     }
     function updateJoy(cx, cy) {
-      var dx = cx - joyOrigin.x;
-      var dy = cy - joyOrigin.y;
+      var p = toLocal(cx, cy);
+      var dx = p.x - joyOrigin.x;
+      var dy = p.y - joyOrigin.y;
       var dist = Math.sqrt(dx * dx + dy * dy);
       var clamped = Math.min(dist, JOY_R);
       var ang = Math.atan2(dy, dx);
