@@ -699,6 +699,47 @@ button { font-family: inherit; }
 
 .damage-layer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
 
+/* F3 调试面板：FPS / 状态机 / 输入缓冲 / 顿帧 / 粒子 / 渲染调用 */
+.debug-panel {
+  position: fixed;
+  left: 1.2vw;
+  top: 1.2vh;
+  z-index: 60;
+  display: none;
+  padding: 8px 12px;
+  min-width: 240px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.55;
+  color: #bfe9ff;
+  background: rgba(4, 10, 14, 0.82);
+  border: 1px solid var(--cyan-dim);
+  border-radius: 4px;
+  pointer-events: none;
+  white-space: pre;
+}
+.debug-panel.active { display: block; }
+
+/* 浮动伤害数字 / 战斗文字（格挡·破防·完美格挡） */
+.damage-number {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-size: clamp(18px, 2.2vw, 30px);
+  font-weight: 900;
+  font-style: italic;
+  letter-spacing: 0.04em;
+  color: #fff;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.85), 0 0 14px rgba(111, 208, 255, 0.55);
+  white-space: nowrap;
+  opacity: 0;
+  will-change: transform, opacity;
+}
+.damage-number.active { opacity: 1; }
+.damage-number.blocked { color: var(--cyan); text-shadow: 0 2px 6px rgba(0, 0, 0, 0.85), 0 0 16px rgba(111, 208, 255, 0.8); }
+.damage-number.critical { color: var(--amber); text-shadow: 0 2px 6px rgba(0, 0, 0, 0.85), 0 0 20px rgba(255, 200, 107, 0.85); }
+.damage-number.perfect-word { color: #ffe08a; text-shadow: 0 2px 6px rgba(0, 0, 0, 0.9), 0 0 22px rgba(255, 214, 110, 0.95); font-size: clamp(20px, 2.6vw, 34px); }
+.damage-number.break-word { color: var(--danger); text-shadow: 0 2px 6px rgba(0, 0, 0, 0.9), 0 0 22px rgba(255, 106, 82, 0.95); font-size: clamp(20px, 2.6vw, 34px); }
+
 .fight-prompts {
   position: fixed;
   left: 50%;
@@ -1335,6 +1376,7 @@ button { font-family: inherit; }
 
   <div class="ultimate-banner" id="ultimate-banner"></div>
   <div class="damage-layer" id="damage-layer"></div>
+  <div class="debug-panel" id="debug-panel"></div>
   <div class="fight-prompts" id="fight-prompts">
     <span class="device-badge" id="device-badge">键盘模式</span>
     <span class="prompt-item"><span class="prompt-key" data-prompt="light"></span><span class="prompt-label">轻攻</span></span>

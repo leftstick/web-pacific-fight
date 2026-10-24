@@ -164,6 +164,10 @@
      * 难度：解析 difficulty 条目并刷新由难度派生的全部缩放系数
      * ------------------------------------------------------------------------ */
     _setDifficulty: function (diff) {
+      var key = 'normal';
+      if (typeof diff === 'string' && AICFG.levels[diff]) key = diff;
+      else { for (var k in AICFG.levels) if (AICFG.levels[k] === diff) { key = k; break; } }
+      this.difficultyKey = key;
       if (typeof diff === 'string') diff = AICFG.levels[diff] || AICFG.levels.normal;
       this.difficulty = diff || AICFG.levels[AICFG.difficulty] || AICFG.levels.normal;
       var d = this.difficulty;
@@ -313,6 +317,26 @@
         if (GAME.Audio && move.sound) GAME.Audio.play(move.sound);
       }
 
+      /* 攻击预兆：起手时长按难度缩放（简单更长、困难更短），并在脚下闪警示环 */
+      var TG = AICFG.telegraph;
+      if (TG && TG.enabled !== false) {
+        var sc = (TG.startupScale && TG.startupScale[this.difficultyKey]);
+        if (typeof sc === 'number' && sc > 0 && mi.move) {
+          if (isUlt) {
+            mi.move.startup *= sc;
+          } else {
+            /* 非必杀动作与 C.moves 共享对象，克隆后再改，避免污染全局动作表 */
+            var mvClone = {};
+            for (var ck in move) { if (move.hasOwnProperty(ck)) mvClone[ck] = move[ck]; }
+            mvClone.startup *= sc;
+            mi.move = mvClone;
+          }
+        }
+        if (this.renderer && this.renderer.spawnTelegraph) {
+          this.renderer.spawnTelegraph(this.position);
+        }
+      }
+
       this.moveInst = mi;
       this.currentMoveKey = baseKey;
       this._emitState();
@@ -431,6 +455,8 @@
       if (v === this.blocking) return;
       this.blocking = v;
       if (v) {
+        /* 记录格挡按下时刻，供 Combat.isPerfectGuard 判定完美格挡窗口 */
+        this._blockPressT = (GAME.Combat && GAME.Combat.nowSec) ? GAME.Combat.nowSec() : Date.now() / 1000;
         this.state = 'block';
         this.anim('block', { fade: 0.12 });     // 怪兽无 block 片段时静默降级
       } else if (this.state === 'block') {
@@ -533,6 +559,7 @@
         energy: Math.round(this.energy),
         stun: Math.round(this.stun),
         diff: this.difficulty && this.difficulty.name,
+        diffKey: this.difficultyKey,
         move: this.currentMoveKey,
         distance: Math.round(this.distance * 10) / 10,
         blocking: this.blocking,

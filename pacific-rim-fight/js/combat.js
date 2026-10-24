@@ -36,6 +36,36 @@
   var freezeTimer = 0;
   var freezeDuration = 0;
 
+  /* 手感调参表（缺省为空对象，保证旧配置也能运行） */
+  function FEEL() { return (C && C.feel) || {}; }
+
+  /* 按帧数配置换算顿帧秒数；未配置时回退到旧 timing 字段 */
+  function hitStopSeconds(key, fallback) {
+    var f = FEEL().hitStop;
+    if (!f || f.enabled === false) return fallback || 0;
+    var frames = (f.frames || {})[key];
+    if (typeof frames !== 'number') return fallback || 0;
+    var fps = f.fps || 60;
+    return frames / fps;
+  }
+
+  /* 输入缓冲窗口（帧 → 秒） */
+  function bufferSeconds(key) {
+    var b = FEEL().buffer;
+    if (!b || b.enabled === false) return 0;
+    var frames = (b.frames || {})[key];
+    if (typeof frames !== 'number') return 0;
+    return frames / (b.fps || 60);
+  }
+
+  /* 真实时间（秒）：完美格挡窗口需用真实时间，避免被顿帧拖慢 */
+  function nowSec() {
+    return ((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) / 1000;
+  }
+
+  /* 动作 key → 顿帧档位（怪兽动作没有独立档位，映射到最接近的机甲档位） */
+  var HITSTOP_ALIAS = { bite: 'light', tail: 'skill', charge: 'heavy', roar: 'skill' };
+
   var Combat = {
     /* 由 main.js 注入 */
     physics: null,
@@ -58,12 +88,50 @@
 
     /* ---------------- 顿帧 / 时间缩放 ---------------- */
     hitstop: function (seconds) {
+      if (FEEL().hitStop && FEEL().hitStop.enabled === false) return;
       if (seconds > freezeTimer) { freezeTimer = seconds; freezeDuration = Math.max(seconds, freezeDuration); }
       freezeTimer = Math.max(freezeTimer, seconds);
     },
     /* main.js 用它乘到 dt 上 */
     timeScale: function () { return freezeTimer > 0 ? 0.06 : 1.0; },
     isFrozen: function () { return freezeTimer > 0; },
+    /* 调试面板用：剩余顿帧秒数 */
+    freezeRemain: function () { return freezeTimer; },
+
+    /* 手感调参对外接口（player.js 复用同一套换算规则，避免数值不一致） */
+    hitStopSeconds: hitStopSeconds,
+    bufferSeconds: bufferSeconds,
+    feel: function () { return FEEL(); },
+    nowSec: nowSec,
+
+    /* 命中顿帧时长：优先按 feel.hitStop.frames 换算，未配置时回退旧 timing */
+    _resolveHitstop: function (move, killed, perfect) {
+      var key = move.key;
+      /* 击杀统一使用必杀级顿帧，强调终结感 */
+      if (killed) key = 'ultimate';
+      else if (HITSTOP_ALIAS[key]) key = HITSTOP_ALIAS[key];
+      var fallback = (move.key === 'ultimate') ? C.timing.hitstopUltimate
+        : (move.key === 'heavy' || move.key === 'charge') ? C.timing.hitstopHeavy
+          : C.timing.hitstop;
+      var seconds = hitStopSeconds(key, fallback);
+      /* 完美格挡额外追加强调顿帧 */
+      if (perfect) {
+        var pg = FEEL().perfectGuard || {};
+        seconds = Math.max(seconds, pg.hitstop || 0);
+      }
+      return seconds;
+    },
+
+    /* 完美格挡判定：格挡键刚按下 feel.perfectGuard.window 秒内接住攻击 */
+    isPerfectGuard: function (defender) {
+      var pg = FEEL().perfectGuard;
+      if (!pg || pg.enabled === false) return false;
+      if (!defender || !defender.blocking) return false;
+      var pressed = defender._blockPressT;
+      if (typeof pressed !== 'number') return false;
+      var dt = nowSec() - pressed;
+      return dt >= 0 && dt <= (pg.window || 0.18);
+    },
 
     /* ---------------- 动作生命周期 ---------------- */
     /* 返回一个动作实例，unit 持有并每帧交给 updateMove */
@@ -170,10 +238,16 @@
       var part = this.partOf(attacker, defender);
       var blocked = false;
       var broken = false;
+      var perfect = false;
 
       /* 格挡判定：正面格挡且动作可被格挡，且攻击者不在目标身后 */
       if (defender.blocking && facing === 'front' && move.blockable !== false && !move.unblockable) {
-        if (move.breakGuard && defender.stamina < C.stamina.dodgeCost) {
+        var pg = FEEL().perfectGuard;
+        /* 完美格挡：格挡键刚按下的窗口内接住攻击（不适用于破防重招） */
+        if (pg && pg.enabled !== false && !move.breakGuard && this.isPerfectGuard(defender)) {
+          perfect = true;
+          blocked = true;
+        } else if (move.breakGuard && defender.stamina < C.stamina.dodgeCost) {
           broken = true;                                  // 耐力不足被重击破防
         } else if (move.breakGuard && Math.random() < 0.35) {
           broken = true;
@@ -200,6 +274,10 @@
       dmg /= (defender.def.defense || 1);               // 防御力
       if (attacker.aiDamageScale) dmg *= attacker.aiDamageScale;   // AI 难度伤害系数
       if (blocked) dmg *= (1 - C.block.damageReduction);
+      if (perfect) {
+        var pgCfg = FEEL().perfectGuard || {};
+        dmg *= (1 - (pgCfg.damageReduction !== undefined ? pgCfg.damageReduction : 0.92));
+      }
 
       var stun = move.stun * (blocked ? (1 - C.block.stunReduction) : 1);
       stun *= (1 - (defender.def.stunResist || 0));
@@ -233,6 +311,7 @@
         damage: Math.round(dmg),
         blocked: blocked,
         broken: broken,
+        perfect: perfect,
         dodged: false,
         facing: facing,
         part: part,
@@ -241,7 +320,8 @@
         knockback: kb,
         stun: stun,
         stunnedNow: stunned,
-        hitstop: killed ? C.timing.hitstopUltimate : (move.key === 'heavy' || move.key === 'charge' || move.key === 'ultimate' ? C.timing.hitstopHeavy : C.timing.hitstop),
+        /* 顿帧：优先按帧数配置换算；完美格挡额外追加强调顿帧 */
+        hitstop: this._resolveHitstop(move, killed, perfect),
         move: move.key,
         attacker: attacker,
         defender: defender,
@@ -265,18 +345,30 @@
 
       /* --- 反馈：顿帧 / 震动 / 音效 / 特效 --- */
       this.hitstop(result.hitstop);
-      if (this.renderer && this.renderer.cameraShake) {
-        /* P2：分级镜头震动（1 轻 / 2 重·技能 / 3 必杀；格挡降级为 1） */
-        var lv = blocked ? 1 : (move.key === 'ultimate' ? 3 : (move.key === 'heavy' || move.key === 'skill' || move.key === 'tail' || move.key === 'charge' ? 2 : 1));
-        this.renderer.cameraShake(lv);
+      var shakeOn = !(FEEL().shake && FEEL().shake.enabled === false);
+      if (shakeOn && this.renderer && this.renderer.cameraShake) {
+        /* 分级镜头震动（1 轻 / 2 重·技能 / 3 必杀；完美格挡额外加强） */
+        if (perfect) this.renderer.cameraShake(2);
+        else {
+          var lv = blocked ? 1 : (move.key === 'ultimate' ? 3 : (move.key === 'heavy' || move.key === 'skill' || move.key === 'tail' || move.key === 'charge' ? 2 : 1));
+          this.renderer.cameraShake(lv);
+        }
       }
       if (this.renderer && this.renderer.spawnImpact) {
-        this.renderer.spawnImpact(result.position, blocked ? 1 : (move.key === 'ultimate' ? 3 : 2), result.facing);
+        /* 动作专属粒子组合：perfect > block > 动作 key */
+        var comboKey = perfect ? 'perfect'
+          : (blocked ? 'block' : (C.moves[move.key] ? move.key : 'light'));
+        this.renderer.spawnImpact(
+          result.position,
+          blocked ? 1 : (move.key === 'ultimate' ? 3 : 2),
+          result.facing,
+          { combo: comboKey, perfect: perfect, broken: broken }
+        );
       }
       if (global.GAME.Audio) GAME.Audio.play(blocked ? 'block' : 'hit', {});
       if (move.key === 'ultimate' && this.renderer && this.renderer.zoomPunch) this.renderer.zoomPunch();
-      if (move.breakGuard && this.renderer && this.renderer.cameraShake) {
-        this.renderer.cameraShake(2);                          /* P2：破防 → 2 级震动 */
+      if (move.breakGuard && shakeOn && this.renderer && this.renderer.cameraShake) {
+        this.renderer.cameraShake(2);                          /* 破防 → 2 级震动 */
       }
 
       /* --- 场景破坏：命中点附近的建筑也会受损 --- */

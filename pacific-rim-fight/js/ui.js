@@ -515,14 +515,23 @@
 
     var e = acquireDamage(layer);
     e.el.className = 'damage-number' +
-      (opts.blocked ? ' blocked' : '') + (opts.critical ? ' critical' : '');
-    e.el.textContent = (opts.blocked && !amount) ? '格挡' : String(Math.round(amount || 0));
+      (opts.blocked ? ' blocked' : '') + (opts.critical ? ' critical' : '') +
+      (opts.perfect ? ' perfect-word' : '') + (opts.broken ? ' break-word' : '');
+    /* 战斗文字优先：破防 > 完美格挡 > 普通格挡 > 伤害数字 */
+    var dmgText;
+    if (opts.broken) dmgText = UI_CFG.texts.guardBreak || 'GUARD BREAK';
+    else if (opts.perfect) dmgText = UI_CFG.texts.perfectGuard || 'PERFECT GUARD';
+    else if (opts.blocked) {
+      var bd = Math.round(amount || 0);
+      dmgText = (UI_CFG.texts.block || 'BLOCK') + (bd > 0 ? ' ' + bd : '');
+    } else dmgText = String(Math.round(amount || 0));
+    e.el.textContent = dmgText;
     e.el.classList.add('active');
     e.x = x;
     e.y = y;
     e.vy = -42;                                  // 像素/秒，向上飘
     e.life = e.maxLife = UI_CFG.hud.damageNumberLife || 0.9;
-    e.baseScale = opts.critical ? 1.35 : (opts.blocked ? 0.9 : 1.0);
+    e.baseScale = opts.broken ? 1.35 : (opts.perfect ? 1.3 : (opts.critical ? 1.35 : (opts.blocked ? 1.05 : 1.0)));
     e.active = true;
 
     e.el.style.opacity = '1';
@@ -733,14 +742,6 @@
 
     if (!U || !U.bus || !U.bus.on) return;
 
-    /* 命中：伤害数字 + 连击 */
-    U.bus.on('combat:hit', function (r) {
-      if (!r) return;
-      UI.showDamageNumber(r.position, r.damage, { blocked: r.blocked, critical: r.critical });
-      var hits = (r.attacker && r.attacker.comboHits) || 0;
-      if (hits >= 2) UI.showCombo(hits, r.damage);
-    });
-
     /* 眩晕满值：眩晕提示 */
     U.bus.on('combat:stunned', function (p) { UI.showStunNotice(p && p.unit); });
 
@@ -770,6 +771,16 @@
       UI._updateDeviceBadge();
     });
 
+    /* 调试面板（F3）：与碰撞盒同步开关 */
+    U.bus.on('debug:toggle', function (p) {
+      var on = !!(p && p.showHitboxes);
+      CONFIG.debug.showStats = on;
+      var el = D('debug-panel');
+      if (!el) return;
+      el.classList.toggle('active', on);
+      if (!on) el.textContent = '';
+    });
+
     /* 资源不足：对应触屏按钮闪红提示 */
     U.bus.on('unit:no-resource', function (p) {
       if (!p || p.unit !== UI.player) return;       // 仅玩家侧反馈
@@ -786,7 +797,9 @@
     /* 命中：伤害数字 + 连击 + 血条闪白 */
     U.bus.on('combat:hit', function (r) {
       if (!r) return;
-      UI.showDamageNumber(r.position, r.damage, { blocked: r.blocked, critical: r.critical });
+      UI.showDamageNumber(r.position, r.damage, {
+        blocked: r.blocked, critical: r.critical, perfect: r.perfect, broken: r.broken
+      });
       var hits = (r.attacker && r.attacker.comboHits) || 0;
       if (hits >= 2) UI.showCombo(hits, r.damage);
       /* 受击方血条闪白 */
@@ -929,6 +942,37 @@
       var el = D('center-text');
       if (el) el.classList.remove('active');
       centerTimer = 0;
+    },
+
+    /* =======================================================================
+     * F3 调试面板：FPS / 时间缩放 / 顿帧 / 震动 / 粒子 / 渲染调用 / 双方状态
+     * ==================================================================== */
+    updateDebugPanel: function () {
+      var el = D('debug-panel');
+      if (!el || !el.classList.contains('active')) return;
+      var M = GAME.Main;
+      var s = (M && M.getDebugSnapshot) ? M.getDebugSnapshot() : null;
+      if (!s) return;
+      var p = s.player || {};
+      var e = s.enemy || {};
+      var lines = [];
+      lines.push('FPS ' + s.fps + '   scale ' + s.worldScale.toFixed(2) +
+        (s.freeze > 0 ? '   HITSTOP ' + (s.freeze * 1000).toFixed(0) + 'ms' : ''));
+      lines.push('HITSTOP ' + (s.hitstopEnabled ? 'on' : 'off') +
+        '   SHAKE ' + (s.shakeEnabled ? 'on' : 'off') + ' ' + s.shake.toFixed(2) +
+        '   BUFFER ' + (s.bufferEnabled ? 'on' : 'off'));
+      lines.push('DRAW ' + s.drawCalls + '   TRI ' + s.triangles);
+      lines.push('FX spark ' + s.sparks + '  dust ' + s.dusts + '  ring ' + s.rings +
+        '  shield ' + s.shields + '  trail ' + s.trails);
+      lines.push('');
+      lines.push('P  ' + (p.state || '-') + (p.movePhase ? '/' + p.movePhase : '') +
+        '  hp ' + (p.hp || 0) + '  st ' + (p.stamina || 0) + '  en ' + (p.energy || 0));
+      lines.push('   combo ' + (p.comboHits || 0) + '  buffer ' + (p.buffer || '-'));
+      lines.push('E  ' + (e.state || '-') + '/' + (e.aiState || '-') +
+        '  hp ' + (e.hp || 0) + '  st ' + (e.stamina || 0) + '  en ' + (e.energy || 0));
+      lines.push('   move ' + (e.move || '-') + '  dist ' + (e.distance || 0) +
+        '  diff ' + (e.diffKey || '-'));
+      el.textContent = lines.join('\n');
     },
 
     /* =======================================================================

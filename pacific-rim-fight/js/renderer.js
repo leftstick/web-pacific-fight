@@ -234,19 +234,25 @@
     },
 
     /* =======================================================================
-     * spawnImpact(position, level, facing)
+     * spawnImpact(position, level, facing, opts)
      *   池化的命中火花：加法混合精灵迸射 + 发光闪光 + 短时点光；
      *   level 1 轻 / 2 重 / 3 必杀（必杀额外展开一圈冲击波环）。
+     *   opts（可选）：{ combo: 'light'|'heavy'|'skill'|'ultimate'|'block'|'perfect' }
+     *   按 ART_CONFIG.fx.hitCombo 生成动作专属的 火花/冲击环/血液/刀光 组合。
      *   热身后不再逐帧分配对象。
      * ==================================================================== */
-    spawnImpact: function (position, level, facing) {
+    spawnImpact: function (position, level, facing, opts) {
       if (!position) return;
       var lv = IMPACT[level] || IMPACT[1];
       var pos = R._pos(position);
       var fb = R._facingBias(facing);
+      var combos = FXCFG.hitCombo || {};
+      var combo = (opts && opts.combo && combos[opts.combo]) ? combos[opts.combo] : null;
+      var pScale = (R._particleScale != null ? R._particleScale : 1);
 
       /* 火花迸射（背击更爆裂；P3：按画质 particleScale 缩放数量） */
-      var n = Math.round((lv.sparks + (fb > 0 ? 6 : 0)) * (R._particleScale != null ? R._particleScale : 1));
+      var baseSparks = combo ? combo.spark : lv.sparks;
+      var n = Math.round((baseSparks + (fb > 0 ? 6 : 0)) * pScale);
       for (var i = 0; i < n; i++) {
         var sk = R._acquire(R._sparks);
         if (!sk) break;
@@ -276,19 +282,51 @@
       /* 短时点光（复用池内光源） */
       R._pulseFxLight(pos, lv.color, lv.light, lv.lightLife);
 
-      /* 必杀：冲击波环 */
-      if (lv.ring) {
+      /* 冲击波环：必杀固定 1 圈；组合配置可要求多圈 */
+      var ringCount = combo ? (combo.impact | 0) : (lv.ring ? 1 : 0);
+      for (var r = 0; r < ringCount; r++) {
         var rg = R._acquire(R._rings);
-        if (rg) {
-          rg.mesh.position.copy(pos);
-          rg.mesh.rotation.set(0, 0, 0);
-          rg.mesh.material.color.setHex(PAL.lightning);
-          rg.from = 1.2; rg.to = 16;
-          rg.life = rg.maxLife = 0.55;
-          rg.mesh.material.opacity = 1;
-          rg.mesh.visible = true;
-          rg.active = true;
-        }
+        if (!rg) break;
+        rg.mesh.position.copy(pos);
+        rg.mesh.rotation.set(0, 0, 0);
+        rg.mesh.material.color.setHex(PAL.lightning);
+        rg.from = 1.2 + r * 1.6; rg.to = 16 + r * 5;
+        rg.life = rg.maxLife = 0.55 + r * 0.12;
+        rg.mesh.material.opacity = 1;
+        rg.mesh.visible = true;
+        rg.active = true;
+      }
+
+      /* 开菊兽血液：红紫粒子，初速低 + 重力下落（复用火花池） */
+      var bloodCount = combo ? Math.round((combo.blood | 0) * pScale) : 0;
+      var bloodColors = FXCFG.bloodColors || [0xb02a3a];
+      for (var b = 0; b < bloodCount; b++) {
+        var bl = R._acquire(R._sparks);
+        if (!bl) break;
+        bl.vel.set(U.rand(-0.8, 0.8) + fb * 0.4, U.rand(0.5, 1.4), U.rand(-0.5, 0.5)).normalize();
+        bl.vel.multiplyScalar(lv.speed * U.rand(0.25, 0.6));
+        bl.sprite.position.copy(pos);
+        bl.sprite.material.color.setHex(bloodColors[b % bloodColors.length]);
+        bl.size = U.rand(0.7, 1.6);
+        bl.life = bl.maxLife = 0.55 * U.rand(0.8, 1.3);
+        bl.sprite.material.opacity = 1;
+        bl.sprite.visible = true;
+        bl.active = true;
+      }
+
+      /* 刀光弧线：青蓝色细环，随机倾角，短促扩散（复用冲击环池） */
+      var slashCount = combo ? (combo.slash | 0) : 0;
+      for (var s = 0; s < slashCount; s++) {
+        var sl = R._acquire(R._rings);
+        if (!sl) break;
+        sl.mesh.position.copy(pos);
+        sl.mesh.rotation.set(U.rand(-0.9, 0.9), U.rand(-0.6, 0.6), U.rand(0, Math.PI * 2));
+        sl.mesh.material.color.setHex(FXCFG.slashColor !== undefined ? FXCFG.slashColor : 0x9fd8ff);
+        sl.from = 2.0; sl.to = 9.0 + s * 2.0;
+        sl.life = sl.maxLife = 0.28;
+        sl.mesh.material.opacity = 0.9;
+        sl.mesh.visible = true;
+        sl.active = true;
       }
     },
 
@@ -452,6 +490,50 @@
     },
 
     /* =======================================================================
+     * spawnTelegraph(position)
+     *   AI 攻击预兆：敌方起手瞬间在脚下展开橙色警示环（水平），
+     *   参数取自 CONFIG.ai.telegraph，纯渲染层。
+     * ==================================================================== */
+    spawnTelegraph: function (position) {
+      var T = (CONFIG.ai && CONFIG.ai.telegraph) || {};
+      if (T.enabled === false || !position) return;
+      var pos = R._pos(position);
+      var rg = R._acquire(R._rings);
+      if (!rg) return;
+      rg.mesh.position.set(pos.x, 0.12, pos.z);
+      rg.mesh.rotation.set(Math.PI * 0.5, 0, 0);
+      rg.mesh.material.color.setHex(T.color !== undefined ? T.color : 0xff8a3c);
+      rg.from = T.radiusFrom || 1.5;
+      rg.to = T.radiusTo || 7.0;
+      rg.life = rg.maxLife = T.life || 0.3;
+      rg.mesh.material.opacity = T.opacity !== undefined ? T.opacity : 0.75;
+      rg.mesh.visible = true;
+      rg.active = true;
+    },
+
+    /* =======================================================================
+     * spawnDodgeStreak(position)
+     *   闪避残影：青色速度环 + 脚下尘雾（复用 shield / dust 池，
+     *   不克隆模型，行进间每 ~60ms 触发一次形成拖影）。
+     * ==================================================================== */
+    spawnDodgeStreak: function (position) {
+      if (!position) return;
+      var pos = R._pos(position);
+      var sh = R._acquire(R._shields);
+      if (sh) {
+        sh.mesh.position.copy(pos);
+        sh.mesh.rotation.set(Math.PI * 0.5, 0, 0);
+        sh.mesh.material.color.setHex(FXCFG.dodgeColor !== undefined ? FXCFG.dodgeColor : 0x8fe3ff);
+        sh.from = 2.2; sh.to = 6.0;
+        sh.life = sh.maxLife = 0.22;
+        sh.mesh.material.opacity = 0.5;
+        sh.mesh.visible = true;
+        sh.active = true;
+      }
+      R._spawnDust(pos.x, 0.4, pos.z, 6);
+    },
+
+    /* =======================================================================
      * startTrail(unit, color) / endTrail(unit)
      *   P2 攻击拖尾：追踪 unit 右臂（fistR/forearmR/armR，找不到则用命中中心+前向），
      *   生成一条带状几何体拖尾。纯渲染层，不触碰 unit.position / 物理。
@@ -603,6 +685,13 @@
       dt = dt || 0;
       R._elapsed = (elapsed === undefined ? R._elapsed + dt : elapsed);
 
+      /* 渲染统计：EffectComposer 每帧会多次 render，关闭自动重置后按帧清零，
+         这样 info.render.calls 才是整帧总调用数（调试面板用） */
+      if (R.renderer && R.renderer.info) {
+        R.renderer.info.autoReset = false;
+        R.renderer.info.reset();
+      }
+
       if (R.city && R.city.update) R.city.update(dt, R._elapsed, R.camera);
 
       R._updateUnitLights(R._elapsed);
@@ -642,6 +731,30 @@
       R._debugHitboxes = !!on;
       if (R._debugGroup) R._debugGroup.visible = R._debugHitboxes;
       return R;
+    },
+
+    /* =======================================================================
+     * getDebugInfo() -> object
+     *   调试面板用：渲染调用数 / 三角形数 / 各类粒子活跃数 / 当前震动强度。
+     * ==================================================================== */
+    getDebugInfo: function () {
+      function activeCount(pool) {
+        var n = 0;
+        if (!pool) return n;
+        for (var i = 0; i < pool.length; i++) if (pool[i] && pool[i].active) n++;
+        return n;
+      }
+      var info = R.renderer && R.renderer.info;
+      return {
+        drawCalls: info ? info.render.calls : 0,
+        triangles: info ? info.render.triangles : 0,
+        sparks: activeCount(R._sparks),
+        dusts: activeCount(R._dusts),
+        rings: activeCount(R._rings),
+        shields: activeCount(R._shields),
+        trails: activeCount(R._trails),
+        shake: Math.round((R._shake || 0) * 1000) / 1000
+      };
     },
 
     /* =======================================================================

@@ -455,6 +455,8 @@
 
     step: function (dt) {
       M.elapsed += dt;
+      /* 平滑 FPS（调试面板用） */
+      if (dt > 0) M.fps = M.fps ? (M.fps * 0.9 + (1 / dt) * 0.1) : (1 / dt);
       GAME.Input.update(dt);
       Main._updateTimers(dt);
 
@@ -473,7 +475,8 @@
             M.player.update(wdt, ctx);
             ctx.opponent = M.player;
             M.enemy.update(wdt, ctx);
-            GAME.Combat.update(wdt);
+            /* 顿帧计时用真实 dt：若用 wdt（已被压到 0.06 倍）会让 3 帧顿帧拖成十几帧 */
+            GAME.Combat.update(dt);
             GAME.UI.updateHUD({ player: M.player, enemy: M.enemy });
             GAME.Renderer.updateCamera([M.player, M.enemy], dt);
           }
@@ -490,6 +493,8 @@
 
       GAME.Renderer.update(dt, M.elapsed);
       if (M.state === 'select') Main.renderPreview(dt);
+      /* F3 调试面板（与碰撞盒同步开关） */
+      if (CONFIG.debug.showStats && GAME.UI && GAME.UI.updateDebugPanel) GAME.UI.updateDebugPanel();
     },
 
     makeCtx: function (wdt, rawDt) {
@@ -523,6 +528,31 @@
         state: M.state,
         selection: M.selection,
         difficulty: M.difficulty,
+        player: M.player ? M.player.getDebugInfo() : null,
+        enemy: M.enemy ? M.enemy.getDebugInfo() : null
+      };
+    },
+
+    /* 调试面板快照：FPS / 时间缩放与顿帧 / 渲染统计 / 双方状态 */
+    getDebugSnapshot: function () {
+      var c = GAME.Combat;
+      var rd = (GAME.Renderer && GAME.Renderer.getDebugInfo) ? GAME.Renderer.getDebugInfo() : {};
+      var feel = (c && c.feel) ? c.feel() : {};
+      return {
+        fps: Math.round(M.fps || 0),
+        worldScale: c ? c.timeScale() : 1,
+        freeze: (c && c.freezeRemain) ? c.freezeRemain() : 0,
+        hitstopEnabled: !!(feel.hitStop && feel.hitStop.enabled !== false),
+        shakeEnabled: !(feel.shake && feel.shake.enabled === false),
+        bufferEnabled: !(feel.buffer && feel.buffer.enabled === false),
+        drawCalls: rd.drawCalls || 0,
+        triangles: rd.triangles || 0,
+        sparks: rd.sparks || 0,
+        dusts: rd.dusts || 0,
+        rings: rd.rings || 0,
+        shields: rd.shields || 0,
+        trails: rd.trails || 0,
+        shake: rd.shake || 0,
         player: M.player ? M.player.getDebugInfo() : null,
         enemy: M.enemy ? M.enemy.getDebugInfo() : null
       };

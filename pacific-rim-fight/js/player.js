@@ -116,7 +116,8 @@
     this._vx = 0; this._vz = 0;                        // 自身移动速度
     this._speed = 0; this._bob = 0; this._stepT = 0;   // 步态
     this._chainIndex = 0; this._chainKey = null; this._chainWindow = 0;
-    this._doingDodge = false; this._dodgeT = 0; this._dodgeVX = 0; this._dodgeVZ = 0;
+    this._doingDodge = false; this._dodgeT = 0; this._dodgeFxT = 0; this._dodgeVX = 0; this._dodgeVZ = 0;
+    this._buffer = { key: null, t: 0 };                             // 输入缓冲
     this._advanceT = 0; this._advanceVX = 0; this._advanceVZ = 0;   // 起手前冲 / 突进
     this._firing = false; this._fireCount = 0;                      // 机炮连射
     this._ultIndex = 0; this._ultTimes = [];                        // 必杀多段
@@ -307,20 +308,52 @@
     }
   };
 
-  /* 输入 → 动作（仅在有资格行动时读取攻击键） */
+  /* 输入 → 动作（含输入缓冲：条件不满足的按键在窗口内保留，见 feel.buffer） */
   Player.prototype._readActions = function (dt, input) {
     if (!input || typeof input.justPressed !== 'function') return;
-    if (this.dead || this.stunned || this.frozen > 0 || this._doingDodge) return;
-    /* 受击硬直期间仅允许闪避（逃脱连击），其余动作需等硬直结束 */
-    if (this._hitT > 0) {
-      if (input.justPressed('dodge')) this.attack('dodge');
+    if (this.dead || this.stunned || this._doingDodge) return;
+    if (!this._buffer) this._buffer = { key: null, t: 0 };
+
+    var combat = this.combat || GAME.Combat || null;
+    var feel = (combat && combat.feel) ? combat.feel() : {};
+    var bufCfg = feel.buffer || {};
+    var bufferOn = bufCfg.enabled !== false;
+    var priority = bufCfg.priority || ['dodge', 'ultimate', 'skill', 'heavy', 'light'];
+    var windowOf = (combat && combat.bufferSeconds) ? combat.bufferSeconds : function () { return 0; };
+
+    /* 1. 本帧新按键：按优先级只取一个，记为最新意图 */
+    var pressed = null;
+    for (var i = 0; i < priority.length; i++) {
+      if (input.justPressed(priority[i])) { pressed = priority[i]; break; }
+    }
+    if (pressed) {
+      if (this._hitT > 0 && pressed !== 'dodge') pressed = null;   /* 受击硬直仅允许闪避 */
+      if (pressed) {
+        /* 动作占用中才进缓冲；资源不足直接交给 attack 处理（避免反复重试） */
+        if (bufferOn && !this._canStartMove(pressed)) {
+          this._buffer.key = pressed;
+          this._buffer.t = windowOf(pressed);
+        } else {
+          this._buffer.key = pressed;
+          this._buffer.t = 0;
+        }
+      }
+    }
+
+    /* 2. 顿帧期间只记录意图，不推进计时 */
+    if (this.frozen > 0) return;
+
+    var key = this._buffer.key;
+    if (!key) return;
+    if (this._hitT > 0 && key !== 'dodge') return;                /* 硬直中保留非闪避意图 */
+
+    /* 3. 尝试执行；仍不可行则在窗口内每帧重试，过期丢弃 */
+    if (this.attack(key)) {
+      this._buffer.key = null; this._buffer.t = 0;
       return;
     }
-    if (input.justPressed('light')) this.attack('light');
-    if (input.justPressed('heavy')) this.attack('heavy');
-    if (input.justPressed('skill')) this.attack('skill');
-    if (input.justPressed('dodge')) this.attack('dodge');
-    if (input.justPressed('ultimate')) this.attack('ultimate');
+    if (this._buffer.t > 0) this._buffer.t -= dt;
+    if (this._buffer.t <= 0) { this._buffer.key = null; this._buffer.t = 0; }
   };
 
   /* ===========================================================================
@@ -455,6 +488,7 @@
     this._advanceT = 0;
     this._doingDodge = true;
     this._dodgeT = 0;
+    this._dodgeFxT = 0;
     this._dodgeVX = dirX * dist / DODGE.duration;
     this._dodgeVZ = dirZ * dist / DODGE.duration;
     this.invuln = false;
@@ -583,12 +617,20 @@
 
     var maxSpeed = this._maxSpeed();
     var tvx = 0, tvz = 0;
+    /* 前摇（startup）期间允许小幅移动（feel.startupMoveScale，默认 0.5 倍速） */
+    var startupScale = 0;
+    if (this.moveInst && this.moveInst.phase === 'startup') {
+      var feel = (GAME.Combat && GAME.Combat.feel) ? GAME.Combat.feel() : {};
+      var s = feel.startupMoveScale;
+      startupScale = (typeof s === 'number' && s > 0) ? s : 0;
+    }
     var canMove = !this.dead && !this.stunned && this.frozen <= 0 &&
-      !this.blocking && !this.moveInst && !this._doingDodge;
+      !this.blocking && !this._doingDodge && (!this.moveInst || startupScale > 0);
     if (canMove && input && input.getAxis) {
       var ax = input.getAxis();
-      tvx = ax.x * maxSpeed;                             // A/D → x
-      tvz = ax.y * maxSpeed * SIDESTEP;                  // W/S → 慢速纵深侧步
+      var ms = maxSpeed * (startupScale > 0 ? startupScale : 1);
+      tvx = ax.x * ms;                                   // A/D → x
+      tvz = ax.y * ms * SIDESTEP;                        // W/S → 慢速纵深侧步
     }
 
     /* 加速斜坡 */
@@ -618,9 +660,21 @@
       this.position.z += this._dodgeVZ * dt;
       this.invuln = (this._dodgeT >= DODGE.invulnStart && this._dodgeT <= DODGE.invulnEnd);
       this._dodgeT += dt;
+      /* 闪避残影：行进间每 60ms 留下一道速度环 + 尘雾 */
+      var feelD = (GAME.Combat && GAME.Combat.feel) ? GAME.Combat.feel() : {};
+      var trailOn = !(feelD.dodgeTrail && feelD.dodgeTrail.enabled === false);
+      var rd = GAME.Renderer;
+      if (trailOn && rd && rd.spawnDodgeStreak) {
+        this._dodgeFxT = (this._dodgeFxT || 0) + dt;
+        if (this._dodgeFxT >= 0.06) {
+          this._dodgeFxT = 0;
+          rd.spawnDodgeStreak(this.getHitCenter ? this.getHitCenter() : this.position);
+        }
+      }
       if (this._dodgeT >= DODGE.duration) {
         this._doingDodge = false;
         this.invuln = false;
+        this._dodgeFxT = 0;
         if (this.state === 'dodge') this.state = 'idle';
       }
     }
@@ -811,6 +865,8 @@
     if (b === this.blocking) return this.blocking;
     this.blocking = b;
     if (b) {
+      /* 记录格挡按下时刻，供 Combat.isPerfectGuard 判定完美格挡窗口 */
+      this._blockPressT = (GAME.Combat && GAME.Combat.nowSec) ? GAME.Combat.nowSec() : Date.now() / 1000;
       if (this.state === 'idle' || this.state === 'walk' || this.state === 'run') {
         this.state = 'block';
         this.anim('block', { fade: 0.12 });
@@ -880,10 +936,14 @@
       this.anim('hit', { fade: 0.06, timeScale: 1.4, force: true });
       this.frozen = Math.max(this.frozen, result.hitstop || HITR.hitStopLight);
       this._hitBack = Math.max(this._hitBack, 0.5);
-      /* P2：格挡护盾波纹（受击点展开能量环，纯渲染层） */
+      /* P2：格挡护盾波纹（受击点展开能量环）；完美格挡金色、普通格挡青色 */
       if (this.renderer && this.renderer.spawnShieldRipple) {
-        var shieldColor = (CONFIG.artConfig && CONFIG.artConfig.glow && CONFIG.artConfig.glow.mechaCore) ? 0x6fd0ff : 0x6fd0ff;
-        this.renderer.spawnShieldRipple(result.position, shieldColor);
+        this.renderer.spawnShieldRipple(result.position, result.perfect ? 0xffd66e : 0x6fd0ff);
+      }
+      if (result.broken) {
+        /* 破防：红闪 + 额外抖动（文字由 UI 显示 GUARD BREAK） */
+        this._flashT = Math.max(this._flashT || 0, (CONFIG.artConfig && CONFIG.artConfig.hitFlash && CONFIG.artConfig.hitFlash.duration) || 0.18);
+        this._flinchT = 0.3;
       }
       this._applyKnockback(result, false);
       return;
@@ -990,7 +1050,8 @@
     this.moveInst = null; this.speedScale = 1; this._exhausted = false;
     this._vx = 0; this._vz = 0; this._speed = 0; this._bob = 0; this._stepT = 0;
     this._chainIndex = 0; this._chainKey = null; this._chainWindow = 0;
-    this._doingDodge = false; this._dodgeT = 0; this._dodgeVX = 0; this._dodgeVZ = 0;
+    this._doingDodge = false; this._dodgeT = 0; this._dodgeFxT = 0; this._dodgeVX = 0; this._dodgeVZ = 0;
+    this._buffer = { key: null, t: 0 };
     this._advanceT = 0; this._advanceVX = 0; this._advanceVZ = 0;
     this._firing = false; this._fireCount = 0;
     this._ultIndex = 0; this._ultTimes = [];
@@ -1043,6 +1104,8 @@
       pos: { x: this.position.x, y: this.position.y, z: this.position.z },
       yaw: this.yaw, facing: this.facing,
       move: this.moveInst ? this.moveInst.key : null,
+      movePhase: this.moveInst ? this.moveInst.phase : null,
+      buffer: (this._buffer && this._buffer.key) ? (this._buffer.key + (this._buffer.t > 0 ? ' ' + this._buffer.t.toFixed(2) + 's' : '')) : null,
       clip: this.currentClip
     };
   };

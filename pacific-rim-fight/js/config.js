@@ -219,6 +219,21 @@
         decay: 6.5,             // 衰减速度
         rotScale: 0.06          // 旋转震动系数
       },
+      /* --- 命中粒子组合：不同动作产生不同粒子（对应提示词3） --- */
+      hitCombo: {
+        light:    { spark: 5,  impact: 1, blood: 0, slash: 0 },
+        heavy:    { spark: 10, impact: 1, blood: 3, slash: 0 },
+        skill:    { spark: 8,  impact: 1, blood: 2, slash: 2 },
+        ultimate: { spark: 20, impact: 2, blood: 8, slash: 3 },
+        bite:     { spark: 6,  impact: 1, blood: 4, slash: 0 },
+        tail:     { spark: 12, impact: 1, blood: 2, slash: 2 },
+        charge:   { spark: 10, impact: 2, blood: 3, slash: 0 },
+        block:    { spark: 8,  impact: 1, blood: 0, slash: 0 },
+        perfect:  { spark: 12, impact: 2, blood: 0, slash: 3 }
+      },
+      bloodColors: [0xb02a3a, 0x8a1f5c, 0x6d1b3f],  // 开菊兽血液（红紫）
+      slashColor: 0x9fd8ff,                          // 刀光轨迹（青蓝）
+      dodgeColor: 0x8fe3ff,                          // 闪避残影（浅青）
       /* --- 必杀镜头缩放 --- */
       zoom: {
         enabled: true,
@@ -296,6 +311,42 @@
       hitstopUltimate: 0.45,
       comboWindow: 0.9,        // 连击窗口
       comboResetTime: 1.2
+    },
+
+    /* -------------------------------------------------------------------------
+     * 动作反馈手感调参表（集中配置，便于整体调参）
+     *   - hitStop   命中顿帧（按帧数配置，统一换算为秒）
+     *   - shake     屏幕震动总开关
+     *   - buffer    输入缓冲（动作被"忙"拒绝时缓存，窗口内自动释放）
+     *   - 前摇/完美格挡/闪避残影 等手感参数
+     * ---------------------------------------------------------------------- */
+    feel: {
+      /* 命中顿帧：按帧数配置（fps 为换算基准） */
+      hitStop: {
+        enabled: true,
+        fps: 60,
+        frames: { light: 3, heavy: 6, skill: 8, ultimate: 10 }
+      },
+      /* 屏幕震动总开关（低画质可关闭） */
+      shake: { enabled: true },
+      /* 输入缓冲：帧数窗口 + 释放优先级（越靠前越优先） */
+      buffer: {
+        enabled: true,
+        fps: 60,
+        frames: { light: 5, heavy: 5, skill: 8, ultimate: 10, dodge: 3 },
+        priority: ['dodge', 'ultimate', 'skill', 'heavy', 'light']
+      },
+      /* 前摇期间允许的小幅移动速度倍率（0 = 完全锁死） */
+      startupMoveScale: 0.5,
+      /* 完美格挡：按下格挡后该时长内被命中即触发 */
+      perfectGuard: {
+        enabled: true,
+        window: 0.18,            // 判定窗口（秒）
+        damageReduction: 0.92,   // 完美格挡额外减伤
+        hitstop: 0.10            // 强调成功感的额外顿帧
+      },
+      /* 闪避残影拖尾 */
+      dodgeTrail: { enabled: true }
     },
 
     /* 动作表：范围 range 以“双方中心距离”计，判定为扇形（角度见 arc） */
@@ -533,6 +584,17 @@
       combat: { speed: 0.75 },
       guard: { duration: 0.9 },
       roar: { duration: 1.6, cooldown: 12 }
+    },
+    /* 攻击预兆（telegraph）：起手时在敌方脚下/身前闪一圈警示环，
+       并按难度缩放起手时长（简单更长便于反应，困难更短） */
+    telegraph: {
+      enabled: true,
+      color: 0xff8a3c,
+      life: 0.30,
+      radiusFrom: 1.5,
+      radiusTo: 7.0,
+      opacity: 0.75,
+      startupScale: { easy: 1.55, normal: 1.15, hard: 0.85 }
     }
   };
 
@@ -650,6 +712,7 @@
       resume: '继续战斗', restart: '重新开始', mainMenu: '返回主菜单',
       rematch: '再战一局', victory: '胜利', defeat: '战败',
       roundStart: '准备战斗', fight: 'FIGHT!', ko: 'K.O.',
+      block: 'BLOCK', guardBreak: 'GUARD BREAK', perfectGuard: 'PERFECT GUARD',
       loading: '正在加载战场资源',
       controllerPad: '控制器：已连接手柄', controllerKb: '控制器：键盘模式',
       difficulty: '难度', player: '玩家', enemy: '敌方',
