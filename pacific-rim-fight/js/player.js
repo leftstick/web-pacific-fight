@@ -310,7 +310,12 @@
   /* 输入 → 动作（仅在有资格行动时读取攻击键） */
   Player.prototype._readActions = function (dt, input) {
     if (!input || typeof input.justPressed !== 'function') return;
-    if (this.dead || this.stunned || this.frozen > 0 || this._hitT > 0 || this._doingDodge) return;
+    if (this.dead || this.stunned || this.frozen > 0 || this._doingDodge) return;
+    /* 受击硬直期间仅允许闪避（逃脱连击），其余动作需等硬直结束 */
+    if (this._hitT > 0) {
+      if (input.justPressed('dodge')) this.attack('dodge');
+      return;
+    }
     if (input.justPressed('light')) this.attack('light');
     if (input.justPressed('heavy')) this.attack('heavy');
     if (input.justPressed('skill')) this.attack('skill');

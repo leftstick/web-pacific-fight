@@ -315,7 +315,7 @@
       skill: {                 // 武器技能：机炮/刀刃，消耗少量能量
         label: '武器技能', startup: 0.22, active: 0.30, recovery: 0.34,
         damage: 58, range: 12.0, arc: 60, stun: 12, knockback: 4.2,
-        energyCost: 15, energyGain: 4, breakGuard: false, blockable: true,
+        energyCost: 10, energyGain: 4, breakGuard: false, blockable: true,
         sound: 'skill', animation: 'skill', comboMax: 2, groundShake: 0.6
       },
       ultimate: {              // 必杀技：满能量释放，专属演出
@@ -366,7 +366,7 @@
     },
     energy: {
       max: 100,
-      regen: 1.6,               // 每秒自然恢复
+      regen: 3.0,               // 每秒自然恢复
       gainOnHitTaken: 4.0,      // 受击积攒
       gainOnBlock: 2.5,
       ultimateReadyAt: 100

@@ -770,6 +770,19 @@
       UI._updateDeviceBadge();
     });
 
+    /* 资源不足：对应触屏按钮闪红提示 */
+    U.bus.on('unit:no-resource', function (p) {
+      if (!p || p.unit !== UI.player) return;       // 仅玩家侧反馈
+      var action = p.action || '';
+      var btn = document.querySelector('.touch-btn[data-action="' + action + '"]');
+      if (!btn) return;
+      btn.classList.remove('no-res');
+      /* 强制重排以重启动画 */
+      void btn.offsetWidth;
+      btn.classList.add('no-res');
+      setTimeout(function () { btn.classList.remove('no-res'); }, 520);
+    });
+
     /* 命中：伤害数字 + 连击 + 血条闪白 */
     U.bus.on('combat:hit', function (r) {
       if (!r) return;
