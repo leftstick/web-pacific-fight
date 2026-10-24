@@ -603,7 +603,32 @@
         light: '□', heavy: '△', dodge: '×', block: '○', skill: 'L1', ultimate: 'R2',
         pause: 'Options', confirm: '×', cancel: '○',
         move: '左摇杆', menu: '摇杆选择 · × 确认 · ○ 返回'
+      },
+      /* 触屏模式：虚拟按键图标 */
+      touch: {
+        label: '触屏模式',
+        light: '轻攻', heavy: '重攻', dodge: '闪避', block: '格挡',
+        skill: '技能', ultimate: '必杀', pause: '⏸',
+        confirm: '确认', cancel: '返回',
+        move: '左摇杆', menu: '左摇杆选择 · 确认'
       }
+    },
+    /* 触屏控制（仅在触屏设备且未连接手柄时启用） */
+    touch: {
+      enabled: true,
+      joystickRadius: 56,        // 摇杆有效半径（px）
+      joystickDeadzone: 14,      // 摇杆死区（px）
+      joystickBaseSize: 120,     // 摇杆底盘视觉直径
+      joystickKnobSize: 54,      // 摇杆旋钮直径
+      /* 右侧按键布局（相对右下角的偏移，单位 vw/vh 由 CSS 控制） */
+      buttons: [
+        { action: 'light', label: '轻攻', size: 64, pos: [0, 0] },
+        { action: 'heavy', label: '重攻', size: 64, pos: [1, -1] },
+        { action: 'skill', label: '技能', size: 52, pos: [-1, -1] },
+        { action: 'dodge', label: '闪避', size: 52, pos: [-1, 0] },
+        { action: 'block', label: '格挡', size: 56, pos: [0, -1] },
+        { action: 'ultimate', label: '必杀', size: 58, pos: [1, 0] }
+      ]
     },
     promptActionNames: {
       light: '轻攻', heavy: '重攻', dodge: '闪避', block: '格挡',

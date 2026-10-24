@@ -741,6 +741,120 @@ button { font-family: inherit; }
 }
 @keyframes dev-dot { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
 
+/* ---- P3 触屏控制：左虚拟摇杆 + 右动作按键 ---- */
+.touch-controls {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  pointer-events: none;            /* 整体不拦截，子元素各自 opt-in */
+  -webkit-tap-highlight-color: transparent;
+  touch-action: none;
+  user-select: none;
+}
+/* 触屏启用时隐藏底部键盘提示条 */
+.fight-prompts.touch-hidden { display: none !important; }
+
+/* 摇杆区：左半屏 */
+.touch-joy-area {
+  position: absolute;
+  left: 0; bottom: 0;
+  width: 46%;
+  height: 60%;
+  pointer-events: auto;
+  touch-action: none;
+}
+.touch-joy-base {
+  position: fixed;
+  width: 120px; height: 120px;
+  margin-left: -60px; margin-top: -60px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(111,208,255,0.10), rgba(111,208,255,0.02));
+  border: 2px solid rgba(111, 208, 255, 0.35);
+  box-shadow: inset 0 0 16px rgba(111, 208, 255, 0.18), 0 0 16px rgba(111, 208, 255, 0.12);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+}
+.touch-joy-base.on { opacity: 1; }
+.touch-joy-knob {
+  position: fixed;
+  width: 54px; height: 54px;
+  margin-left: -27px; margin-top: -27px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #8fe6ff, #2f86b8);
+  border: 2px solid rgba(200, 240, 255, 0.7);
+  box-shadow: 0 0 18px rgba(111, 208, 255, 0.6), inset 0 2px 6px rgba(255,255,255,0.4);
+  opacity: 0;
+  transition: opacity 0.1s ease;
+  pointer-events: none;
+  left: 0; top: 0;
+}
+.touch-joy-knob.on { opacity: 1; }
+
+/* 按键区：右半屏 */
+.touch-btns {
+  position: absolute;
+  right: 0; bottom: 0;
+  width: 46%;
+  height: 60%;
+  pointer-events: none;
+}
+.touch-btn {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tb-size, 56px);
+  height: var(--tb-size, 56px);
+  border-radius: 50%;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #dff6ff;
+  background: radial-gradient(circle at 35% 30%, rgba(111,208,255,0.28), rgba(111,208,255,0.06));
+  border: 2px solid rgba(111, 208, 255, 0.45);
+  box-shadow: 0 0 14px rgba(111, 208, 255, 0.22), inset 0 0 10px rgba(111, 208, 255, 0.12);
+  text-shadow: 0 0 6px rgba(111, 208, 255, 0.6);
+  pointer-events: auto;
+  touch-action: none;
+  transition: transform 0.06s ease, box-shadow 0.06s ease, background 0.06s ease;
+}
+.touch-btn:active, .touch-btn.pressed {
+  transform: scale(0.9);
+  background: radial-gradient(circle at 35% 30%, rgba(111,208,255,0.55), rgba(111,208,255,0.18));
+  box-shadow: 0 0 22px rgba(111, 208, 255, 0.55), inset 0 0 14px rgba(111, 208, 255, 0.28);
+}
+/* 动作按键布局（相对右下角） */
+.touch-btn-light   { right: 7%;  bottom: 10%; }
+.touch-btn-heavy   { right: 22%; bottom: 22%; }
+.touch-btn-skill   { right: 30%; bottom: 8%; }
+.touch-btn-dodge   { right: 38%; bottom: 20%; }
+.touch-btn-block   { right: 20%; bottom: 5%; }
+.touch-btn-ultimate {
+  right: 8%; bottom: 34%;
+  color: #ffe6c0;
+  border-color: rgba(255, 200, 107, 0.55);
+  background: radial-gradient(circle at 35% 30%, rgba(255,200,107,0.32), rgba(255,200,107,0.08));
+  box-shadow: 0 0 16px rgba(255, 200, 107, 0.32), inset 0 0 10px rgba(255,200,107,0.14);
+}
+.touch-btn-ultimate:active, .touch-btn-ultimate.pressed {
+  box-shadow: 0 0 26px rgba(255, 200, 107, 0.65), inset 0 0 16px rgba(255, 200, 107, 0.32);
+}
+/* 暂停键：右上角小按钮 */
+.touch-btn-pause {
+  right: 3%; top: 3%;
+  width: 42px; height: 42px;
+  font-size: 16px;
+  color: var(--muted);
+  background: rgba(8, 19, 26, 0.5);
+  border: 1px solid rgba(111, 208, 255, 0.3);
+}
+@media (max-width: 640px) {
+  .touch-joy-base { width: 100px; height: 100px; margin-left: -50px; margin-top: -50px; }
+  .touch-joy-knob { width: 46px; height: 46px; margin-left: -23px; margin-top: -23px; }
+  .touch-btn { font-size: 11px; }
+}
+
 /* ---- ⑨ 暂停界面 -------------------------------------------------------- */
 .pause-backdrop {
   position: absolute;

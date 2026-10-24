@@ -174,6 +174,7 @@
 
   /* 当前设备对应的提示文案表 */
   function promptTable() {
+    if (touchEnabled) return INPUT_CONFIG.prompts.touch || INPUT_CONFIG.prompts.keyboard;
     if (Input.device === 'keyboard') return INPUT_CONFIG.prompts.keyboard;
     if (Input.gamepadKind === 'ps') return INPUT_CONFIG.prompts.ps;
     return INPUT_CONFIG.prompts.gamepad;
@@ -282,6 +283,204 @@
   })();
 
   /* =========================================================================
+   * 触屏控制（虚拟摇杆 + 动作按键）
+   *   - 仅在触屏设备且未连接手柄时启用
+   *   - 触摸事件通过 pointer 统一处理，feed 到既有 state/pressed 合成
+   *   - 摇杆输出 touchAxis，按键输出 touchDown，在 update() 中与键盘/手柄合并
+   * ====================================================================== */
+  var TOUCH_CFG = INPUT_CONFIG.touch || {};
+  var touchSupported = (typeof window !== 'undefined') &&
+    (('ontouchstart' in window) ||
+     (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0));
+  var touchEnabled = false;          // 是否当前启用触屏 UI
+  var touchVisible = false;          // 战斗中是否显示
+  var touchDown = {};                // action -> bool
+  var touchAxis = { x: 0, y: 0 };    // 摇杆归一化输出（x 右正，y 前正）
+  var touchEl = null, joyBase = null, joyKnob = null;
+  var joyPointerId = null, joyOrigin = { x: 0, y: 0 }, joyActive = false;
+
+  function isTouchDevice() { return touchSupported && !!(TOUCH_CFG.enabled); }
+
+  /* 是否应该启用触屏（触屏设备 且 无可用手柄） */
+  function shouldEnableTouch() {
+    if (!isTouchDevice()) return false;
+    return !Input.isConnected();
+  }
+
+  /* 构建触屏 DOM */
+  function buildTouchDom() {
+    if (touchEl) return;
+    var doc = document;
+    touchEl = doc.createElement('div');
+    touchEl.id = 'touch-controls';
+    touchEl.className = 'touch-controls';
+    touchEl.style.display = 'none';
+    touchEl.setAttribute('aria-hidden', 'true');
+
+    /* 摇杆区（左半屏） */
+    var joyArea = doc.createElement('div');
+    joyArea.className = 'touch-joy-area';
+    joyBase = doc.createElement('div');
+    joyBase.className = 'touch-joy-base';
+    joyKnob = doc.createElement('div');
+    joyKnob.className = 'touch-joy-knob';
+    joyArea.appendChild(joyBase);
+    joyArea.appendChild(joyKnob);
+    touchEl.appendChild(joyArea);
+
+    /* 按键区（右半屏） */
+    var btns = doc.createElement('div');
+    btns.className = 'touch-btns';
+    var defs = TOUCH_CFG.buttons || [];
+    for (var i = 0; i < defs.length; i++) {
+      var d = defs[i];
+      var b = doc.createElement('button');
+      b.type = 'button';
+      b.className = 'touch-btn touch-btn-' + d.action;
+      b.setAttribute('data-action', d.action);
+      b.style.setProperty('--tb-size', (d.size || 56) + 'px');
+      b.textContent = d.label || '';
+      btns.appendChild(b);
+    }
+    /* 暂停键（右上角） */
+    var pauseBtn = doc.createElement('button');
+    pauseBtn.type = 'button';
+    pauseBtn.className = 'touch-btn touch-btn-pause';
+    pauseBtn.setAttribute('data-action', 'pause');
+    pauseBtn.textContent = '⏸';
+    btns.appendChild(pauseBtn);
+
+    touchEl.appendChild(btns);
+    doc.body.appendChild(touchEl);
+
+    bindTouchEvents(joyArea, btns);
+  }
+
+  function bindTouchEvents(joyArea, btns) {
+    var JOY_R = TOUCH_CFG.joystickRadius || 56;
+    var JOY_DZ = TOUCH_CFG.joystickDeadzone || 14;
+
+    /* ---- 摇杆 ---- */
+    function onJoyDown(e) {
+      if (joyPointerId !== null) return;
+      e.preventDefault();
+      joyPointerId = e.pointerId;
+      joyActive = true;
+      joyOrigin.x = e.clientX;
+      joyOrigin.y = e.clientY;
+      joyArea.setPointerCapture(e.pointerId);
+      /* 底盘出现于触摸点 */
+      joyBase.style.left = joyOrigin.x + 'px';
+      joyBase.style.top = joyOrigin.y + 'px';
+      joyBase.classList.add('on');
+      joyKnob.classList.add('on');
+      updateJoy(e.clientX, e.clientY);
+    }
+    function updateJoy(cx, cy) {
+      var dx = cx - joyOrigin.x;
+      var dy = cy - joyOrigin.y;
+      var dist = Math.sqrt(dx * dx + dy * dy);
+      var clamped = Math.min(dist, JOY_R);
+      var ang = Math.atan2(dy, dx);
+      var kx = Math.cos(ang) * clamped;
+      var ky = Math.sin(ang) * clamped;
+      joyKnob.style.transform = 'translate(' + (joyOrigin.x + kx) + 'px,' + (joyOrigin.y + ky) + 'px)';
+      if (dist <= JOY_DZ) {
+        touchAxis.x = 0; touchAxis.y = 0;
+      } else {
+        touchAxis.x = kx / JOY_R;
+        touchAxis.y = -ky / JOY_R;     // 屏幕 y 向下为正，游戏 y 向前为正
+      }
+    }
+    function onJoyMove(e) {
+      if (e.pointerId !== joyPointerId) return;
+      e.preventDefault();
+      updateJoy(e.clientX, e.clientY);
+    }
+    function onJoyUp(e) {
+      if (e.pointerId !== joyPointerId) return;
+      joyPointerId = null;
+      joyActive = false;
+      touchAxis.x = 0; touchAxis.y = 0;
+      joyBase.classList.remove('on');
+      joyKnob.classList.remove('on');
+      try { joyArea.releasePointerCapture(e.pointerId); } catch (err) {}
+    }
+    joyArea.addEventListener('pointerdown', onJoyDown, false);
+    joyArea.addEventListener('pointermove', onJoyMove, false);
+    joyArea.addEventListener('pointerup', onJoyUp, false);
+    joyArea.addEventListener('pointercancel', onJoyUp, false);
+
+    /* ---- 按键 ---- */
+    var btnList = btns.querySelectorAll('.touch-btn');
+    for (var k = 0; k < btnList.length; k++) {
+      (function (btn) {
+        var action = btn.getAttribute('data-action');
+        var pid = null;
+        function press(e) {
+          e.preventDefault();
+          pid = e.pointerId;
+          btn.setPointerCapture(e.pointerId);
+          btn.classList.add('pressed');
+          if (!touchDown[action]) {
+            touchDown[action] = true;
+            latchPressed[action] = true;   // 边沿：仅首次按下触发
+          }
+        }
+        function release(e) {
+          if (e && pid !== null && e.pointerId !== pid) return;
+          pid = null;
+          btn.classList.remove('pressed');
+          if (touchDown[action]) {
+            touchDown[action] = false;
+            latchReleased[action] = true;
+          }
+        }
+        btn.addEventListener('pointerdown', press, false);
+        btn.addEventListener('pointerup', release, false);
+        btn.addEventListener('pointercancel', release, false);
+        /* 注意：不监听 pointerleave，因为 setPointerCapture 会把后续事件锁定到本按钮，
+           手指滑出不会误释放；pointerleave 在部分浏览器会提前触发导致丢输入。 */
+      })(btnList[k]);
+    }
+  }
+
+  /* 设置触屏 UI 可见性（战斗中显示，菜单时隐藏） */
+  function setTouchVisible(v) {
+    touchVisible = !!v;
+    if (touchEl) touchEl.style.display = (touchEnabled && touchVisible) ? '' : 'none';
+  }
+
+  /* 启用/停用触屏模式（由设备检测驱动） */
+  function setTouchEnabled(v) {
+    if (touchEnabled === v) return;
+    touchEnabled = v;
+    if (v) {
+      buildTouchDom();
+      touchEl.style.display = touchVisible ? '' : 'none';
+      /* 切换为键盘设备分支以便 getAxis 返回含 touch 的键盘轴 */
+      if (Input.device !== 'gamepad') {
+        Input.device = 'keyboard';
+      }
+    } else if (touchEl) {
+      touchEl.style.display = 'none';
+      /* 释放所有按下状态 */
+      for (var a in touchDown) touchDown[a] = false;
+      touchAxis.x = 0; touchAxis.y = 0;
+    }
+    U.bus.emit('input:touch', { enabled: v });
+  }
+
+  /* 刷新设备检测（每帧由 update 末尾调用） */
+  function refreshTouchMode() {
+    if (isTouchDevice()) {
+      setTouchEnabled(shouldEnableTouch());
+    } else {
+      setTouchEnabled(false);
+    }
+  }
+
+  /* =========================================================================
    * Input 单例
    * ====================================================================== */
   var Input = {
@@ -356,11 +555,15 @@
         gpDown[a] = activePadRef ? buttonDown(activePadRef, BTN_MAP[a]) : false;
       }
 
-      /* 摇杆与键盘方向轴 */
+      /* 摇杆与键盘方向轴（P3 触屏：叠加 touchAxis） */
       stickX = activePadRef ? applyDeadzone(padAxis(activePadRef, AXIS_X)) : 0;
       stickY = activePadRef ? applyDeadzone(padAxis(activePadRef, AXIS_Y)) : 0;
       keyAxisX = (kbDown.right ? 1 : 0) - (kbDown.left ? 1 : 0);
       keyAxisY = (kbDown.forward ? 1 : 0) - (kbDown.back ? 1 : 0);
+      if (touchEnabled) {
+        keyAxisX = U.clamp(keyAxisX + touchAxis.x, -1, 1);
+        keyAxisY = U.clamp(keyAxisY + touchAxis.y, -1, 1);
+      }
 
       /* 活跃度采样（用于设备切换） */
       var gpActiveNow = false;
@@ -376,7 +579,7 @@
       var newPressed = {}, newReleased = {};
       for (j = 0; j < ACTION_LIST.length; j++) {
         A = ACTION_LIST[j];
-        d = !!(kbDown[A] || gpDown[A]);
+        d = !!(kbDown[A] || gpDown[A] || (touchEnabled && touchDown[A]));
         next[A] = d;
         if (d && !last[A]) newPressed[A] = true;
         if (!d && last[A]) newReleased[A] = true;
@@ -423,6 +626,9 @@
           switchDevice('keyboard');
         }
       }
+
+      /* --- 6. 触屏模式检测（每帧） --- */
+      refreshTouchMode();
     },
 
     /* ---------------- 查询 ---------------- */
@@ -448,6 +654,11 @@
       if (Input.device === 'gamepad' && activePadRef) return { x: stickX, y: -stickY };
       return { x: keyAxisX, y: keyAxisY };
     },
+
+    /* 触屏相关（UI/主循环调用） */
+    setTouchVisible: function (v) { setTouchVisible(v); return Input; },
+    isTouchEnabled: function () { return touchEnabled; },
+    isTouchDevice: function () { return isTouchDevice(); },
 
     /* 扳机量 0..1 */
     getTrigger: function (a) {

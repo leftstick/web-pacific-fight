@@ -763,6 +763,13 @@
       UI._updateDeviceBadge();
     });
 
+    /* 触屏模式开关：隐藏底部键盘提示（虚拟按键已替代） */
+    U.bus.on('input:touch', function (p) {
+      var fp = D('fight-prompts');
+      if (fp) fp.classList.toggle('touch-hidden', !!(p && p.enabled));
+      UI._updateDeviceBadge();
+    });
+
     /* 命中：伤害数字 + 连击 + 血条闪白 */
     U.bus.on('combat:hit', function (r) {
       if (!r) return;
@@ -850,6 +857,10 @@
       }
       UI.currentScreen = (name && SCREEN_IDS[name]) ? name : null;
       UI._setHudVisible(UI.currentScreen === 'fight');
+      /* 战斗时显示触屏控制，其余界面隐藏 */
+      if (UI.input && typeof UI.input.setTouchVisible === 'function') {
+        UI.input.setTouchVisible(UI.currentScreen === 'fight');
+      }
       if (UI.currentScreen === 'menu' || UI.currentScreen === 'select') UI.refreshPrompts();
       if (UI.currentScreen === 'pause') { UI.refreshQualityUI(); UI.refreshFxUI(); }
       return UI.currentScreen;
