@@ -398,6 +398,7 @@
         if (this.renderer && this.renderer.spawnArmorDebris) {
           this.renderer.spawnArmorDebris(result.position, defender);
         }
+        if (global.GAME.Audio) GAME.Audio.play('armorBreak', {});
         U.bus.emit('combat:armor-break', { unit: defender, attacker: attacker });
       }
       /* 完美格挡：通知 UI 弹提示 */

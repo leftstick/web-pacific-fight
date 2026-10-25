@@ -764,14 +764,16 @@
     sfxVolume: 0.6,
     ambientVolume: 0.35,
     sounds: {
-      light:   { type: 'noise', freq: 780, dur: 0.12, gain: 0.5 },
-      heavy:   { type: 'noise', freq: 320, dur: 0.34, gain: 0.9 },
+      light:   { type: 'noise', freq: 680, dur: 0.12, gain: 0.5 },
+      heavy:   { type: 'noise', freq: 180, dur: 0.44, gain: 1.0 },   /* 重击：更低沉、更长 */
       skill:   { type: 'square', freq: 240, dur: 0.22, gain: 0.4 },
-      ultimate:{ type: 'sawtooth', freq: 90, dur: 1.2, gain: 1.0 },
-      hit:     { type: 'noise', freq: 180, dur: 0.18, gain: 0.7 },
+      ultimate:{ type: 'sawtooth', freq: 70, dur: 1.4, gain: 1.1 },  /* 必杀：更低频轰鸣 */
+      hit:     { type: 'noise', freq: 130, dur: 0.20, gain: 0.8 },   /* 命中：金属闷响 */
       block:   { type: 'square', freq: 520, dur: 0.14, gain: 0.35 },
-      step:    { type: 'sine', freq: 70, dur: 0.16, gain: 0.35 },
-      roar:    { type: 'sawtooth', freq: 120, dur: 1.0, gain: 0.8 },
+      step:    { type: 'sine', freq: 52, dur: 0.22, gain: 0.5 },    /* 脚步：厚重低频 */
+      roar:    { type: 'sawtooth', freq: 80, dur: 1.5, gain: 0.9 },  /* 怪兽咆哮：低沉 */
+      plasma:  { type: 'sawtooth', freq: 1400, dur: 0.18, gain: 0.3 }, /* 等离子链锯嗡鸣 */
+      armorBreak: { type: 'noise', freq: 220, dur: 0.5, gain: 0.85 }, /* 装甲破碎：金属撕裂 */
       explosion:{ type: 'noise', freq: 140, dur: 0.7, gain: 0.9 },
       thunder: { type: 'noise', freq: 60, dur: 1.4, gain: 0.5 },
       uiMove:  { type: 'square', freq: 640, dur: 0.06, gain: 0.22 },

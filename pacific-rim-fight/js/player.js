@@ -421,11 +421,13 @@
       case 'light':
         this.state = 'attack';
         this.anim('light', { fade: 0.12 });
+        if (this.def.weapon && this.def.weapon.type === 'blade' && global.GAME.Audio) GAME.Audio.play('plasma', { gain: 0.25 });
         break;
       case 'heavy':
         this.spendStamina(move.staminaCost || 0);
         this.state = 'attack';
         this.anim('heavy', { fade: 0.2 });                  // 重攻击起手更长、淡入更慢
+        if (this.def.weapon && this.def.weapon.type === 'blade' && global.GAME.Audio) GAME.Audio.play('plasma', { gain: 0.35, duration: 0.28 });
         break;
       case 'skill':
         this.spendEnergy(move.energyCost || 0);
