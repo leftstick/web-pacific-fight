@@ -34,8 +34,8 @@
   /* ------------------------- 实现细节常量（config 未定义者） ------------------------- */
   var BASE_SPEED = 9;              // 基础移速（世界单位/秒），实际 = BASE_SPEED * def.speed
   var SIDESTEP = 0.5;              // W/S 纵深侧步速度为横向的一半
-  var ACCEL_LAMBDA = 10;           // 加速斜坡响应（指数趋近，帧率无关）
-  var YAW_LAMBDA = 8;              // 朝向平滑响应
+  var ACCEL_LAMBDA = 6.5;          // 加速斜坡响应（降低→更重的惯性感）
+  var YAW_LAMBDA = 5.5;            // 朝向平滑响应（降低→巨型机体转向迟缓）
   var MASS_REF = 1000;             // 击退质量归一化基准（与 physics.js 保持一致）
   var MODEL_YAW_OFFSET = Math.PI / 2;  // 程序化模型正面为 +Z，偏移后使 yaw=0 时正面指向 +X
   var HIT_BACK_AMOUNT = 0.8;       // 受击“后仰”时根节点的视觉回撤量（世界单位）

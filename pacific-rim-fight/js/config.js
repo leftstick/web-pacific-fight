@@ -358,7 +358,7 @@
         sound: 'light', animation: 'light', comboMax: 3, groundShake: 0.35
       },
       heavy: {                 // 重攻击：慢、高伤、高硬直，可破防
-        label: '重攻击', startup: 0.42, active: 0.16, recovery: 0.52,
+        label: '重攻击', startup: 0.50, active: 0.16, recovery: 0.62,
         damage: 96, range: 9.0, arc: 80, stun: 25, knockback: 7.5,
         staminaCost: 18, energyGain: 12, breakGuard: true, blockable: true,
         sound: 'heavy', animation: 'heavy', comboMax: 1, groundShake: 1.0
@@ -370,7 +370,7 @@
         sound: 'skill', animation: 'skill', comboMax: 2, groundShake: 0.6
       },
       ultimate: {              // 必杀技：满能量释放，专属演出
-        label: '必杀技', startup: 0.75, active: 0.60, recovery: 0.95,
+        label: '必杀技', startup: 0.90, active: 0.60, recovery: 0.95,
         damage: 260, range: 15.0, arc: 140, stun: 60, knockback: 13.0,
         energyCost: 100, energyGain: 0, breakGuard: true, blockable: false,
         sound: 'ultimate', animation: 'ultimate', comboMax: 1, groundShake: 2.0,

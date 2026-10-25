@@ -35,6 +35,7 @@
   /* 全局顿帧状态（命中瞬间整个世界短暂减速，制造打击重量感） */
   var freezeTimer = 0;
   var freezeDuration = 0;
+  var freezeScale = 0.06;       /* 顿帧期间的时间缩放（必杀可更低） */
 
   /* 手感调参表（缺省为空对象，保证旧配置也能运行） */
   function FEEL() { return (C && C.feel) || {}; }
@@ -82,18 +83,20 @@
       this.units = opts.units || [];
       this.destructibles = opts.destructibles || [];
       this.stats = { damageDealt: 0, damageTaken: 0, hits: 0, blocked: 0, maxCombo: 0, buildingsDestroyed: 0, duration: 0, ultimateUsed: 0 };
-      freezeTimer = 0; freezeDuration = 0;
+      freezeTimer = 0; freezeDuration = 0; freezeScale = 0.06;
       return this;
     },
 
     /* ---------------- 顿帧 / 时间缩放 ---------------- */
-    hitstop: function (seconds) {
+    hitstop: function (seconds, scale) {
       if (FEEL().hitStop && FEEL().hitStop.enabled === false) return;
       if (seconds > freezeTimer) { freezeTimer = seconds; freezeDuration = Math.max(seconds, freezeDuration); }
       freezeTimer = Math.max(freezeTimer, seconds);
+      /* 减速强度：必杀/击杀用更深慢动作（0.04），其余默认 0.06 */
+      if (scale && scale < freezeScale) freezeScale = scale;
     },
     /* main.js 用它乘到 dt 上 */
-    timeScale: function () { return freezeTimer > 0 ? 0.06 : 1.0; },
+    timeScale: function () { return freezeTimer > 0 ? freezeScale : 1.0; },
     isFrozen: function () { return freezeTimer > 0; },
     /* 调试面板用：剩余顿帧秒数 */
     freezeRemain: function () { return freezeTimer; },
@@ -357,7 +360,9 @@
       this.stats.hits++; if (blocked) this.stats.blocked++;
 
       /* --- 反馈：顿帧 / 震动 / 音效 / 特效 --- */
-      this.hitstop(result.hitstop);
+      /* 必杀/击杀：更深慢动作（0.04），强化重击电影感 */
+      var isUlt = (move.key === 'ultimate') || killed;
+      this.hitstop(result.hitstop, isUlt ? 0.04 : 0.06);
       var shakeOn = !(FEEL().shake && FEEL().shake.enabled === false);
       if (shakeOn && this.renderer && this.renderer.cameraShake) {
         /* 分级镜头震动（1 轻 / 2 重·技能 / 3 必杀；完美格挡额外加强） */
@@ -453,7 +458,7 @@
       /* 顿帧 */
       if (freezeTimer > 0) {
         freezeTimer = Math.max(0, freezeTimer - dt);
-        if (freezeTimer === 0) freezeDuration = 0;
+        if (freezeTimer === 0) { freezeDuration = 0; freezeScale = 0.06; }
       }
       for (var i = 0; i < this.units.length; i++) {
         var u = this.units[i];
