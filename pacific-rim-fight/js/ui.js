@@ -760,12 +760,12 @@
     /* 装甲破防：中央提示 */
     U.bus.on('combat:armor-break', function (p) {
       var isPlayer = p && p.unit === UI.player;
-      UI.showCenterText(isPlayer ? '装甲破损' : '敌甲壳破裂', { duration: 1.0, style: 'armor-break' });
+      UI.showCenterText(isPlayer ? '装甲破损' : '敌甲壳破裂', { duration: 0.7, style: 'armor-break' });
     });
     /* 完美格挡：中央提示 */
     U.bus.on('combat:perfect-guard', function (p) {
       var isPlayer = p && p.unit === UI.player;
-      if (isPlayer) UI.showCenterText('格挡成功', { duration: 0.7, style: 'perfect' });
+      if (isPlayer) UI.showCenterText('格挡成功', { duration: 0.5, style: 'perfect' });
     });
 
     /* 击杀：中央 K.O. */

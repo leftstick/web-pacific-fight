@@ -109,6 +109,8 @@
     /* --- 运动 --- */
     this.vel = { x: 0, y: 0, z: 0 };
     this.grounded = true;
+    /* 躯干惯性（纯视觉）：上帧位置用于推算水平速度 */
+    this._lastX = px; this._lastZ = pz; this._leanX = 0; this._leanZ = 0;
 
     /* --- AI --- */
     this.ai = def.ai || {};
@@ -397,7 +399,7 @@
         this.state = 'hit';
         this.currentMoveKey = null;
       }
-      if (!ultLock) this.anim('hit', { once: true, clamp: true, fade: 0.07 });
+      if (!ultLock) this.anim('hit', { once: true, clamp: true, fade: 0.1 });
 
       /* 眩晕：Combat.addStun → setStunned/onStunned 已在本单位内处理 */
       this._stress();
@@ -502,6 +504,9 @@
       this.knockbackVel = { x: 0, y: 0, z: 0 };
       this.vel = { x: 0, y: 0, z: 0 };
       this.grounded = true;
+      this._lastX = this._spawn.x; this._lastZ = this._spawn.z;
+      this._leanX = 0; this._leanZ = 0;
+      this._debrisStage = 0;
       this.comboHits = 0;
       this.comboTimer = 0;
       this.comboDamageBonus = 1;
@@ -596,6 +601,7 @@
         this._syncRoot();
         this._updateMaterials(dt);
         if (this.mixer) this.mixer.update(dt);
+        this._applyTorsoInertia(dt);
         return;
       }
 
@@ -605,6 +611,7 @@
         this._syncRoot();
         this._updateMaterials(dt);
         if (this.mixer) this.mixer.update(dt);
+        this._applyTorsoInertia(dt);
         return;
       }
 
@@ -670,6 +677,7 @@
       /* 动画 */
       this._updateAnim();
       if (this.mixer) this.mixer.update(dt);
+      this._applyTorsoInertia(dt);
 
       this._emitState();
     },
@@ -1093,6 +1101,33 @@
       this.root.rotation.y = MODEL_FORWARD_Y - this.yaw;
     },
 
+    /* 躯干惯性（纯视觉层，必须在 mixer 之后调用）：
+     * 突进/冲刺时躯干前压，被击退时后仰回摆，转向时身体轻微侧倾 */
+    _applyTorsoInertia: function (dt) {
+      var parts = this.model && this.model.parts;
+      if (!parts || !parts.torso || !this.THREE || !(dt > 0)) return;
+
+      var vx = (this.position.x - this._lastX) / dt;
+      var vz = (this.position.z - this._lastZ) / dt;
+      this._lastX = this.position.x;
+      this._lastZ = this.position.z;
+
+      /* 沿朝向的前向速度：>0 前进 → 前倾，<0 被击退 → 后仰 */
+      var fwdVel = vx * this.facing;
+      var targetX = U.clamp(fwdVel * 0.012, -0.15, 0.15);
+      /* 横向速度（侧闪 / 击退偏移）→ 侧倾 */
+      var targetZ = U.clamp(vz * 0.012, -0.1, 0.1) * this.facing;
+
+      this._leanX = U.damp(this._leanX || 0, targetX, 8, dt);
+      this._leanZ = U.damp(this._leanZ || 0, targetZ, 6, dt);
+
+      var q = this._leanQ || (this._leanQ = new this.THREE.Quaternion());
+      var e = this._leanEuler || (this._leanEuler = new this.THREE.Euler());
+      e.set(this._leanX, 0, this._leanZ);
+      q.setFromEuler(e);
+      parts.torso.quaternion.multiply(q);
+    },
+
     /* 材质反馈：受击闪白逐帧衰减；发光材质呼吸脉动 */
     _updateMaterials: function (dt) {
       var mdl = this.model;
@@ -1128,7 +1163,7 @@
         }
       }
       var once = (this.dead || this.stunned);
-      this.anim(clip, { once: once, clamp: once, fade: clip === 'hit' ? 0.07 : 0.2 });
+      this.anim(clip, { once: once, clamp: once, fade: clip === 'hit' ? 0.1 : 0.2 });
     },
 
     /* 偶尔咆哮：仅在 idle/patrol 且冷却结束时节流触发 */

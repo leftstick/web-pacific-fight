@@ -126,6 +126,9 @@
     this._hitT = 0; this._flinchT = 0; this._hitBack = 0; this._staminaDelay = 0;
     this._exhausted = false;
     this._lastStateKey = '';
+    /* 躯干惯性（纯视觉）：前倾 / 侧倾 / 急停阻尼 */
+    this._leanX = 0; this._leanZ = 0; this._prevSpeed = 0; this._prevYaw = this.yaw;
+    this._softReturn = 0;
 
     /* --- 动画 --- */
     this.mixer = null;
@@ -264,6 +267,8 @@
     }
     /* 受击后仰视觉回撤的衰减 */
     if (this._hitBack > 0) this._hitBack = U.damp(this._hitBack, 0, 7, dt);
+    /* 攻击收招后回待机的柔和过渡窗口 */
+    if (this._softReturn > 0) this._softReturn = Math.max(0, this._softReturn - dt);
   };
 
   /* 格挡：持续状态 + 逐秒耗耐力 + 耐力耗尽破防 */
@@ -417,6 +422,8 @@
     this.moveInst = mi;
 
     /* --- 按键专属：资源扣除 / 状态 / 演出 --- */
+    /* 液压关节起手：短促机械声，强化百吨机体的启动重量感 */
+    if (global.GAME.Audio) GAME.Audio.play('hydraulic', { gain: key === 'ultimate' ? 0.5 : 0.32 });
     switch (key) {
       case 'light':
         this.state = 'attack';
@@ -603,6 +610,7 @@
     this._advanceT = 0; this._advanceVX = 0; this._advanceVZ = 0;
     this._firing = false;
     this._ultIndex = 0; this._ultTimes = [];
+    this._softReturn = 0.32;                         // 收招后的柔和回待机窗口（避免姿势硬切）
     if (this.state === 'attack' || this.state === 'ultimate') this.state = 'idle';
   };
 
@@ -690,10 +698,16 @@
     this._bob = canMove ? Math.min(1, this._speed / (maxSpeed || 1)) : 0;
 
     /* 脚步落地溅水（雨夜地面积水） */
+    this._footAudioT = (this._footAudioT || 0) - dt;
     if (this._speed > 1.0 && Math.floor(this._stepT) > prevStep) {
       var rd2 = GAME.Renderer;
       if (rd2 && rd2.spawnSplash) {
         rd2.spawnSplash({ x: this.position.x, y: this.position.y + 0.1, z: this.position.z });
+      }
+      /* 厚重低频机械脚步声（限流，避免高步频叠加爆音） */
+      if (this._footAudioT <= 0) {
+        this._footAudioT = 0.34;
+        if (global.GAME.Audio) GAME.Audio.play('step', { gain: 0.38 });
       }
     }
 
@@ -803,7 +817,8 @@
       });
     } else {
       this.state = 'idle';
-      this.anim('idle', { fade: 0.18 });
+      /* 攻击收招后回待机用更长淡入，避免重击/必杀结束姿势硬切 */
+      this.anim('idle', { fade: this._softReturn > 0 ? 0.3 : 0.18 });
     }
   };
 
@@ -824,6 +839,35 @@
     /* 材质：受击闪白衰减 + 发光呼吸 */
     this._updateMaterials(dt);
     if (this.mixer) this.mixer.update(dt);
+    this._applyTorsoInertia(dt);                                   // 必须在 mixer 之后叠加
+  };
+
+  /* 躯干惯性（纯视觉层）：加速前倾 / 急停阻尼后仰 / 转向离心侧倾
+   * 直接叠加在躯干节点的局部旋转上，不改动任何位移与战斗数据 */
+  Player.prototype._applyTorsoInertia = function (dt) {
+    var parts = this.parts;
+    if (!parts || !parts.torso || !this.THREE) return;
+    var maxSpeed = this._maxSpeed() || 1;
+    var sp = this._speed || 0;
+    var prevSp = this._prevSpeed || 0;
+    var accel = dt > 0 ? (sp - prevSp) / dt : 0;
+    this._prevSpeed = sp;
+
+    var yawRate = dt > 0 ? U.angleDelta(this._prevYaw || 0, this.yaw) / dt : 0;
+    this._prevYaw = this.yaw;
+
+    /* 加速时躯干前压，急停/后退时向后仰（阻尼回摆） */
+    var fwd = U.clamp(accel * 0.018, -0.13, 0.13);
+    /* 转向时躯干向外侧倾，速度越快越明显 */
+    var turn = U.clamp(-yawRate * 0.055, -0.12, 0.12) * Math.min(1, sp / (maxSpeed * 0.8));
+    this._leanX = U.damp(this._leanX || 0, fwd, 7, dt);
+    this._leanZ = U.damp(this._leanZ || 0, turn, 5, dt);
+
+    var q = this._leanQ || (this._leanQ = new this.THREE.Quaternion());
+    var e = this._leanEuler || (this._leanEuler = new this.THREE.Euler());
+    e.set(this._leanX, 0, this._leanZ);
+    q.setFromEuler(e);
+    parts.torso.quaternion.multiply(q);
   };
 
   /* 材质反馈：受击闪白逐帧衰减；发光材质呼吸脉动 */
@@ -991,7 +1035,7 @@
     this.frozen = Math.max(this.frozen, result.hitstop || HITR.hitStopLight);
     this._hitT = Math.max(this._hitT, Math.max(0.25, result.hitstop || 0));
     this.state = 'hit';
-    this.anim('hit', { fade: 0.06 });
+    this.anim('hit', { fade: 0.09 });
     this._hitBack = Math.max(this._hitBack, 1);
     this.addEnergy(0);                                    // 受击积攒能量由 Combat 负责，这里保持一致性
     this._applyKnockback(result, false);
@@ -1089,6 +1133,9 @@
     this._firing = false; this._fireCount = 0;
     this._ultIndex = 0; this._ultTimes = [];
     this._hitT = 0; this._flinchT = 0; this._hitBack = 0; this._staminaDelay = 0;
+    this._leanX = 0; this._leanZ = 0; this._prevSpeed = 0; this._prevYaw = this.yaw;
+    this._softReturn = 0;
+    this._debrisStage = 0;
 
     if (this.position.set) this.position.set(this._spawn.x, this._spawn.y || 0, this._spawn.z);
     this.facing = this._initFacing;

@@ -126,6 +126,7 @@
         if (opts.maps.emissiveMap) m.emissiveMap = opts.maps.emissiveMap;
       }
       if (opts.bumpScale !== undefined) m.bumpScale = opts.bumpScale;
+      if (opts.normalScale !== undefined && m.normalScale) m.normalScale.set(opts.normalScale, opts.normalScale);
       if (opts.envMapIntensity !== undefined) m.envMapIntensity = opts.envMapIntensity;
       m.userData.baseEmissive = m.emissive ? m.emissive.clone() : new THREE.Color(0x000000);
       m.userData.baseEmissiveIntensity = m.emissiveIntensity;
@@ -254,8 +255,8 @@
       var mm = MDEF.mecha || { metalness: 0.62, roughness: 0.5, envMapIntensity: 1.0 };
       var ma = MDEF.accent || { metalness: 0.72, roughness: 0.42, envMapIntensity: 1.0 };
       var md = MDEF.dark || { metalness: 0.5, roughness: 0.66, envMapIntensity: 0.8 };
-      var armor = Models._mat(def.armor, { metalness: mm.metalness, roughness: mm.roughness, maps: tex, bumpScale: 0.02, envMapIntensity: mm.envMapIntensity });
-      var accent = Models._mat(def.accent, { metalness: ma.metalness, roughness: ma.roughness, maps: tex, envMapIntensity: ma.envMapIntensity });
+      var armor = Models._mat(def.armor, { metalness: mm.metalness, roughness: mm.roughness, maps: tex, normalScale: 0.9, envMapIntensity: mm.envMapIntensity });
+      var accent = Models._mat(def.accent, { metalness: ma.metalness, roughness: ma.roughness, maps: tex, normalScale: 0.7, envMapIntensity: ma.envMapIntensity });
       var dark = Models._mat(0x10151a, { metalness: md.metalness, roughness: md.roughness, envMapIntensity: md.envMapIntensity });
       var glow = Models._glowMat(def.glow, (AC.glow && AC.glow.mechaCore) || 1.15);
       var glowWarm = Models._glowMat(0xffd9a0, (AC.glow && AC.glow.mechaWarm) || 0.85);
@@ -437,9 +438,9 @@
       var ks = KDEF.kaijuSkin || { metalness: 0.05, roughness: 0.9 };
       var kb = KDEF.kaijuBelly || { metalness: 0.05, roughness: 0.85 };
       var kp = KDEF.kaijuPlate || { metalness: 0.35, roughness: 0.8 };
-      var skin = Models._mat(def.skin, { metalness: ks.metalness, roughness: ks.roughness, flat: true, maps: tex, bumpScale: 0.035 });
-      var belly = Models._mat(def.belly, { metalness: kb.metalness, roughness: kb.roughness, flat: true, maps: tex, bumpScale: 0.025 });
-      var plate = Models._mat(0x2b3238, { metalness: kp.metalness, roughness: kp.roughness, flat: true, maps: tex, bumpScale: 0.03 });
+      var skin = Models._mat(def.skin, { metalness: ks.metalness, roughness: ks.roughness, flat: true, maps: tex, normalScale: 1.25 });
+      var belly = Models._mat(def.belly, { metalness: kb.metalness, roughness: kb.roughness, flat: true, maps: tex, normalScale: 0.9 });
+      var plate = Models._mat(0x2b3238, { metalness: kp.metalness, roughness: kp.roughness, flat: true, maps: tex, normalScale: 1.1 });
       var glow = Models._glowMat(def.glow, (AC.glow && AC.glow.kaijuCore) || 0.95);
       var glowSoft = Models._glowMat(def.glow, (AC.glow && AC.glow.kaijuSoft) || 0.6);
       var spikeMat = Models._mat(0x1a1f22, { metalness: 0.1, roughness: 0.6, flat: true });
@@ -799,16 +800,48 @@
       legR: { q: function (u) { return [0.12 * s(PI * u), 0, 0]; } }
     }));
 
-    /* 重攻击：大幅抬臂下砸（1.10s，起手明显便于对手反应） */
-    clips.push(buildClip('heavy', 1.10, false, {
-      hip: { q: function (u) { return [0, -0.2 * s(PI * u) - 0.15 * s(PI * Math.min(1, u / 0.38)), 0]; }, p: function (u) { return [0, u < 0.38 ? u * 0.6 : (1 - (u - 0.38) / 0.62) * 0.38, 0]; } },
-      body: { q: function (u) { return [u < 0.38 ? -0.42 * (u / 0.38) : 0.5 * ((u - 0.38) / 0.62), -0.35 * s(PI * u), 0]; } },
-      armR: { q: function (u) { return [u < 0.38 ? -2.3 * (u / 0.38) : -2.3 + 3.1 * Math.min(1, (u - 0.38) / 0.25), 0, -0.25]; } },
-      forearmR: { q: function (u) { return [u < 0.38 ? -1.3 * (u / 0.38) : -0.6 * (1 - Math.min(1, (u - 0.38) / 0.25)) - 0.4, 0, 0]; } },
-      armL: { q: function (u) { return [0.5 * s(PI * u), 0, 0.3]; } },
-      head: { q: function (u) { return [u < 0.38 ? -0.25 * (u / 0.38) : 0.3 * ((u - 0.38) / 0.62), 0, 0]; } },
-      legL: { q: function (u) { return [-0.15 * s(PI * u), 0, 0]; } },
-      legR: { q: function (u) { return [0.2 * s(PI * u), 0, 0]; } }
+    /* 重攻击：全身后摆蓄力 → 髋部带动躯干扭转下砸 → 明显收招硬直
+       时长 1.28s 与 moves.heavy（起手0.50 + 判定0.16 + 收招0.62）严格对齐，
+       避免逻辑已结束而动画还停在中途造成“姿势硬切”。 */
+    clips.push(buildClip('heavy', 1.28, false, {
+      hip: {
+        q: function (u) {
+          var w = u < 0.39 ? (u / 0.39) : 1;
+          var hit = Math.min(1, Math.max(0, (u - 0.39) / 0.13));
+          var rec = Math.max(0, (u - 0.72) / 0.28);
+          return [0, -0.26 * w + 0.5 * hit - 0.24 * rec, 0.05 * w - 0.05 * hit];
+        },
+        p: function (u) {
+          var w = u < 0.39 ? (u / 0.39) : 1;
+          var rec = Math.max(0, (u - 0.72) / 0.28);
+          return [0, -0.2 * w + rec * 0.2, 0];
+        }
+      },
+      body: {
+        q: function (u) {
+          var w = u < 0.39 ? (u / 0.39) : 1;
+          var hit = Math.min(1, Math.max(0, (u - 0.39) / 0.14));
+          var rec = Math.max(0, (u - 0.72) / 0.28);
+          return [-0.42 * w + 0.8 * hit - 0.38 * rec,
+            0.5 * w - 1.0 * hit + 0.5 * rec,
+            0.12 * w - 0.2 * hit];
+        }
+      },
+      armR: {
+        q: function (u) {
+          var w = u < 0.39 ? (u / 0.39) : 1;
+          var hit = Math.min(1, Math.max(0, (u - 0.39) / 0.14));
+          var rec = Math.max(0, (u - 0.72) / 0.28);
+          return [-2.55 * w + 3.45 * hit - 0.9 * rec, 0.25 * w - 0.25 * hit, -0.28];
+        }
+      },
+      forearmR: { q: function (u) { return [-1.45 * Math.min(1, u / 0.39) + 1.0 * Math.min(1, Math.max(0, (u - 0.39) / 0.14)), 0, 0]; } },
+      armL: { q: function (u) { return [0.55 * Math.min(1, u / 0.39) - 0.55 * Math.min(1, Math.max(0, (u - 0.45) / 0.3)), 0, 0.34]; } },
+      head: { q: function (u) { return [-0.28 * Math.min(1, u / 0.39) + 0.42 * Math.min(1, Math.max(0, (u - 0.39) / 0.14)), 0.2 * Math.min(1, u / 0.39), 0]; } },
+      legL: { q: function (u) { return [-0.22 * s(PI * u), 0, 0.03]; } },
+      legR: { q: function (u) { return [0.26 * s(PI * u), 0, -0.03]; } },
+      shinL: { q: function (u) { return [0.18 * Math.max(0, s(PI * u)), 0, 0]; } },
+      shinR: { q: function (u) { return [0.22 * Math.max(0, s(PI * u)), 0, 0]; } }
     }));
 
     /* 武器技能：刀刃突刺 / 机炮齐射（0.86s） */
@@ -880,17 +913,52 @@
       shinR: { q: function (u) { return [1.6 * Math.min(1, u / 0.55), 0, 0]; } }
     }));
 
-    /* 必杀技演出：蓄力 → 停顿 → 双刃风暴（2.3s，与 moves.ultimate 一致） */
-    clips.push(buildClip('ultimate', 2.3, false, {
-      hip: { q: function (u) { return [0, u < 0.5 ? 0.4 * (u / 0.5) : 0.4 - 0.9 * Math.min(1, (u - 0.5) / 0.25), 0]; }, p: function (u) { return [0, u < 0.5 ? -(u / 0.5) * 0.35 : -0.35 + Math.min(1, (u - 0.5) / 0.3) * 0.2, 0]; } },
-      body: { q: function (u) { return [u < 0.5 ? -0.35 * (u / 0.5) : u < 0.72 ? 0.2 : 0.4 - 0.3 * s(PI * ((u - 0.72) / 0.28)), u < 0.5 ? 0 : (u < 0.72 ? 0 : -TWO_PI * ((u - 0.72) / 0.28)), 0]; } },
-      armL: { q: function (u) { return [u < 0.5 ? -2.0 * (u / 0.5) : -2.0 + 1.4 * Math.min(1, (u - 0.5) / 0.22), 0, 0.4 - Math.min(1, (u - 0.72) / 0.28) * 1.6]; } },
-      forearmL: { q: function (u) { return [-1.5 * Math.min(1, u / 0.5), 0, 0]; } },
-      armR: { q: function (u) { return [u < 0.5 ? -2.0 * (u / 0.5) : -2.0 + 1.4 * Math.min(1, (u - 0.5) / 0.22), 0, -0.4 + Math.min(1, (u - 0.72) / 0.28) * 1.6]; } },
-      forearmR: { q: function (u) { return [-1.5 * Math.min(1, u / 0.5), 0, 0]; } },
-      head: { q: function (u) { return [u < 0.5 ? -0.3 * (u / 0.5) : 0.35, 0, 0]; } },
-      legL: { q: function (u) { return [0.5 * s(PI * Math.min(1, u / 0.5)), 0, 0.15]; } },
-      legR: { q: function (u) { return [0.5 * s(PI * Math.min(1, u / 0.5)), 0, -0.15]; } }
+    /* 必杀技演出：全身重心下压长蓄力 → 释放 → 双刃风暴（2.45s，
+       与 moves.ultimate 起手0.90 + 判定0.60 + 收招0.95 完全对齐） */
+    clips.push(buildClip('ultimate', 2.45, false, {
+      hip: {
+        q: function (u) {
+          var w = u < 0.37 ? (u / 0.37) : 1;
+          var rel = Math.min(1, Math.max(0, (u - 0.37) / 0.09));
+          return [0, 0.45 * w - 1.0 * rel, 0];
+        },
+        p: function (u) {
+          var w = u < 0.37 ? (u / 0.37) : 1;
+          var rel = Math.min(1, Math.max(0, (u - 0.37) / 0.14));
+          return [0, -0.42 * w + 0.26 * rel, 0];
+        }
+      },
+      body: {
+        q: function (u) {
+          var w = u < 0.37 ? (u / 0.37) : 1;
+          var rel = Math.min(1, Math.max(0, (u - 0.37) / 0.09));
+          var spin = Math.max(0, (u - 0.62) / 0.38);
+          return [-0.4 * w + 0.28 * rel, -TWO_PI * spin, 0];
+        }
+      },
+      armL: {
+        q: function (u) {
+          var w = Math.min(1, u / 0.37);
+          var rel = Math.min(1, Math.max(0, (u - 0.37) / 0.2));
+          var ext = Math.min(1, Math.max(0, (u - 0.62) / 0.38));
+          return [-2.2 * w + 1.5 * rel, 0, 0.45 - ext * 1.7];
+        }
+      },
+      forearmL: { q: function (u) { return [-1.6 * Math.min(1, u / 0.37) + 0.5 * Math.min(1, Math.max(0, (u - 0.45) / 0.18)), 0, 0]; } },
+      armR: {
+        q: function (u) {
+          var w = Math.min(1, u / 0.37);
+          var rel = Math.min(1, Math.max(0, (u - 0.37) / 0.2));
+          var ext = Math.min(1, Math.max(0, (u - 0.62) / 0.38));
+          return [-2.2 * w + 1.5 * rel, 0, -0.45 + ext * 1.7];
+        }
+      },
+      forearmR: { q: function (u) { return [-1.6 * Math.min(1, u / 0.37) + 0.5 * Math.min(1, Math.max(0, (u - 0.45) / 0.18)), 0, 0]; } },
+      head: { q: function (u) { return [-0.34 * Math.min(1, u / 0.37) + 0.5 * Math.min(1, Math.max(0, (u - 0.4) / 0.12)), 0, 0]; } },
+      legL: { q: function (u) { return [0.55 * Math.min(1, u / 0.37) - 0.2 * Math.min(1, Math.max(0, (u - 0.4) / 0.15)), 0, 0.18]; } },
+      legR: { q: function (u) { return [0.55 * Math.min(1, u / 0.37) - 0.2 * Math.min(1, Math.max(0, (u - 0.4) / 0.15)), 0, -0.18]; } },
+      shinL: { q: function (u) { return [0.35 * Math.min(1, u / 0.37), 0, 0]; } },
+      shinR: { q: function (u) { return [0.35 * Math.min(1, u / 0.37), 0, 0]; } }
     }));
 
     return clips;
@@ -950,8 +1018,24 @@
       head: { q: function (u) { return [u < 0.32 ? 0.3 * (u / 0.32) : 0.3 - 0.55 * Math.min(1, (u - 0.32) / 0.25), 0, 0]; } },
       jawLower: { q: function (u) { return [u < 0.32 ? 0.95 * (u / 0.32) : 0.95 * (1 - Math.min(1, (u - 0.32) / 0.12)), 0, 0]; } },
       jawUpper: { q: function (u) { return [u < 0.32 ? -0.25 * (u / 0.32) : -0.25 * (1 - Math.min(1, (u - 0.32) / 0.12)), 0, 0]; } },
-      torso: { q: function (u) { return [0.1 + 0.35 * s(PI * u), 0, 0]; } },
-      hip: { q: function (u) { return [0, 0.15 * s(PI * u), 0]; } }
+      /* 躯干先后坐蓄力，再随咬合前扑，避免头部单独瞬移 */
+      torso: {
+        q: function (u) {
+          var w = u < 0.32 ? (u / 0.32) : 1;
+          var lunge = Math.min(1, Math.max(0, (u - 0.32) / 0.16));
+          return [0.1 - 0.16 * w + 0.46 * lunge, 0, 0];
+        }
+      },
+      hip: {
+        q: function (u) {
+          var lunge = Math.min(1, Math.max(0, (u - 0.32) / 0.16));
+          return [0, 0.18 * lunge, 0];
+        },
+        p: function (u) {
+          var lunge = Math.min(1, Math.max(0, (u - 0.32) / 0.16));
+          return [0, 0, 0.18 * lunge];
+        }
+      }
     }));
 
     /* 尾击：180° 横扫（1.06s，对齐 moves.tail） */
@@ -1040,13 +1124,51 @@
   }
   function canvasTexture(canvas, repeat, linear) {
     var t = new THREE.CanvasTexture(canvas);
-    /* 颜色贴图需 SRGB；数据贴图（roughnessMap / bumpMap）保持线性空间 */
+    /* 颜色贴图需 SRGB；数据贴图（roughnessMap / normalMap）保持线性空间 */
     if (!linear) t.colorSpace = THREE.SRGBColorSpace;
     if (repeat) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(repeat[0], repeat[1]); }
-    t.anisotropy = 4;
+    var UT = AC.unitTexture || {};
+    t.anisotropy = UT.anisotropy || 8;   // 斜视角下装甲/鳞片不再糊成一片
+    t.minFilter = THREE.LinearMipmapLinearFilter;
+    t.magFilter = THREE.LinearFilter;
     return t;
   }
   function hex(col) { return '#' + new THREE.Color(col).getHexString(); }
+
+  /* 由高度图（灰度 canvas）生成法线贴图：Sobel 求梯度 → 切线空间法线。
+     用于给程序化装甲/甲壳增加真实的凹凸高光，替代强度有限的 bumpMap。 */
+  function heightToNormal(srcCanvas, strength) {
+    var w = srcCanvas.width, h = srcCanvas.height;
+    var src = srcCanvas.getContext('2d').getImageData(0, 0, w, h).data;
+    var lum = new Float32Array(w * h);
+    var i;
+    for (i = 0; i < w * h; i++) {
+      lum[i] = (src[i * 4] * 0.299 + src[i * 4 + 1] * 0.587 + src[i * 4 + 2] * 0.114) / 255;
+    }
+    function L(x, y) {
+      x = (x + w) % w; y = (y + h) % h;
+      return lum[y * w + x];
+    }
+    var out = makeCanvas(w, h);
+    var octx = out.getContext('2d');
+    var img = octx.createImageData(w, h);
+    var s = strength === undefined ? 1 : strength;
+    for (var y = 0; y < h; y++) {
+      for (var x = 0; x < w; x++) {
+        var dx = (L(x + 1, y) - L(x - 1, y)) * s;
+        var dy = (L(x, y + 1) - L(x, y - 1)) * s;
+        var nx = -dx, ny = dy, nz = 1;          // 画布 y 向下 → 绿色通道取反
+        var len = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+        var o = (y * w + x) * 4;
+        img.data[o] = (nx / len * 0.5 + 0.5) * 255;
+        img.data[o + 1] = (ny / len * 0.5 + 0.5) * 255;
+        img.data[o + 2] = (nz / len * 0.5 + 0.5) * 255;
+        img.data[o + 3] = 255;
+      }
+    }
+    octx.putImageData(img, 0, 0);
+    return canvasTexture(out, null, true);
+  }
 
   /* ==================================================================== */
   /* 单位程序化 PBR 贴图                                                   */
@@ -1058,10 +1180,16 @@
   function unitTextures(kind) {
     if (_unitTexCache[kind]) return _unitTexCache[kind];
     var set = {};
+    var UT = AC.unitTexture || {};
+    var MAP = UT.mapSize || 1024;         // 颜色贴图（近距离细节）
+    var DET = UT.detailSize || 512;       // 法线/粗糙度贴图
+    var mScale = MAP / 512, dScale = DET / 256;
+    var NS = UT.normalStrength || {};
 
     if (kind === 'kaiju') {
       /* --- 生物皮肤：斑驳鳞片 --- */
-      var kc = makeCanvas(512, 512), kg = kc.getContext('2d');
+      var kc = makeCanvas(MAP, MAP), kg = kc.getContext('2d');
+      kg.scale(mScale, mScale);
       kg.fillStyle = '#ffffff'; kg.fillRect(0, 0, 512, 512);
       for (var i = 0; i < 1400; i++) {
         var v = U.randInt(0, 60);
@@ -1083,7 +1211,8 @@
       set.map = canvasTexture(kc);
 
       /* 粗糙度：整体偏粗糙，局部有光滑膜感 */
-      var krc = makeCanvas(256, 256), krg = krc.getContext('2d');
+      var krc = makeCanvas(DET, DET), krg = krc.getContext('2d');
+      krg.scale(dScale, dScale);
       krg.fillStyle = '#cfcfcf'; krg.fillRect(0, 0, 256, 256);
       for (var j = 0; j < 260; j++) {
         krg.fillStyle = 'rgba(' + U.randInt(90, 240) + ',' + U.randInt(90, 240) + ',' + U.randInt(90, 240) + ',' + U.rand(0.2, 0.5).toFixed(2) + ')';
@@ -1091,19 +1220,23 @@
       }
       set.roughnessMap = canvasTexture(krc, null, true);
 
-      /* 凸凹：与鳞片暗线同构 */
-      var kbc = makeCanvas(256, 256), kbg = kbc.getContext('2d');
-      kbg.fillStyle = '#808080'; kbg.fillRect(0, 0, 256, 256);
-      kbg.strokeStyle = '#4a4a4a'; kbg.lineWidth = 2;
+      /* 高度图：鳞片沟壑（凸起的鳞片 + 凹陷的缝）→ 转法线贴图 */
+      var khc = makeCanvas(DET, DET), khg = khc.getContext('2d');
+      khg.scale(dScale, dScale);
+      khg.fillStyle = '#8a8a8a'; khg.fillRect(0, 0, 256, 256);
+      khg.strokeStyle = '#3a3a3a'; khg.lineWidth = 2.4;
       for (var by = 0; by < 300; by += 20) {
         for (var bx = 0; bx < 300; bx += 20) {
-          kbg.beginPath(); kbg.arc(bx + U.rand(-3, 3), by + U.rand(-3, 3), U.rand(6, 10), 0, Math.PI * 2); kbg.stroke();
+          khg.beginPath(); khg.arc(bx + U.rand(-3, 3), by + U.rand(-3, 3), U.rand(6, 10), 0, Math.PI * 2); khg.stroke();
+          khg.fillStyle = 'rgba(210,210,210,' + U.rand(0.15, 0.4).toFixed(2) + ')';
+          khg.beginPath(); khg.arc(bx + U.rand(-2, 2), by + U.rand(-2, 2), U.rand(3, 5), 0, Math.PI * 2); khg.fill();
         }
       }
-      set.bumpMap = canvasTexture(kbc, null, true);
+      set.normalMap = heightToNormal(khc, NS.kaiju || 1.15);
     } else {
       /* --- 机甲装甲：面板线 + 铆钉 + 磨损 --- */
-      var mc = makeCanvas(512, 512), mg = mc.getContext('2d');
+      var mc = makeCanvas(MAP, MAP), mg = mc.getContext('2d');
+      mg.scale(mScale, mScale);
       mg.fillStyle = '#f2f2f2'; mg.fillRect(0, 0, 512, 512);
       /* 面板缝隙 */
       mg.strokeStyle = 'rgba(70,70,70,0.55)'; mg.lineWidth = 2;
@@ -1133,7 +1266,8 @@
       set.map = canvasTexture(mc);
 
       /* 粗糙度：基板较光滑，缝线/磨损处更粗糙 */
-      var mrc = makeCanvas(256, 256), mrg = mrc.getContext('2d');
+      var mrc = makeCanvas(DET, DET), mrg = mrc.getContext('2d');
+      mrg.scale(dScale, dScale);
       mrg.fillStyle = '#8a8a8a'; mrg.fillRect(0, 0, 256, 256);
       for (var mr = 0; mr < 180; mr++) {
         mrg.fillStyle = 'rgba(' + U.randInt(120, 240) + ',' + U.randInt(120, 240) + ',' + U.randInt(120, 240) + ',' + U.rand(0.15, 0.4).toFixed(2) + ')';
@@ -1144,13 +1278,29 @@
       for (var mrx = 0; mrx <= 256; mrx += 32) { mrg.beginPath(); mrg.moveTo(mrx, 0); mrg.lineTo(mrx, 256); mrg.stroke(); }
       set.roughnessMap = canvasTexture(mrc, null, true);
 
-      /* 凸凹：面板缝为凹槽 */
-      var mbc = makeCanvas(256, 256), mbg = mbc.getContext('2d');
-      mbg.fillStyle = '#b0b0b0'; mbg.fillRect(0, 0, 256, 256);
-      mbg.strokeStyle = '#303030'; mbg.lineWidth = 3;
-      for (var mby = 0; mby <= 256; mby += 32) { mbg.beginPath(); mbg.moveTo(0, mby); mbg.lineTo(256, mby); mbg.stroke(); }
-      for (var mbx = 0; mbx <= 256; mbx += 32) { mbg.beginPath(); mbg.moveTo(mbx, 0); mbg.lineTo(mbx, 256); mbg.stroke(); }
-      set.bumpMap = canvasTexture(mbc, null, true);
+      /* 高度图：面板凹槽 + 铆钉凸点 + 划痕 → 法线贴图（斜视时高光沿凹槽走） */
+      var mhc = makeCanvas(DET, DET), mhg = mhc.getContext('2d');
+      mhg.scale(dScale, dScale);
+      mhg.fillStyle = '#9a9a9a'; mhg.fillRect(0, 0, 256, 256);
+      /* 凹槽 */
+      mhg.strokeStyle = '#2c2c2c'; mhg.lineWidth = 3;
+      for (var mhy = 0; mhy <= 256; mhy += 32) { mhg.beginPath(); mhg.moveTo(0, mhy); mhg.lineTo(256, mhy); mhg.stroke(); }
+      for (var mhx = 0; mhx <= 256; mhx += 32) { mhg.beginPath(); mhg.moveTo(mhx, 0); mhg.lineTo(mhx, 256); mhg.stroke(); }
+      /* 铆钉 */
+      mhg.fillStyle = '#e8e8e8';
+      for (var rhy = 0; rhy <= 256; rhy += 32) {
+        for (var rhx = 0; rhx <= 256; rhx += 32) {
+          for (var rv2 = 0; rv2 < 3; rv2++) {
+            mhg.beginPath(); mhg.arc(rhx + U.rand(4, 28), rhy + U.rand(4, 28), 1.6, 0, Math.PI * 2); mhg.fill();
+          }
+        }
+      }
+      /* 磕碰浅坑 */
+      mhg.fillStyle = '#656565';
+      for (var dg = 0; dg < 40; dg++) {
+        mhg.beginPath(); mhg.arc(U.rand(0, 256), U.rand(0, 256), U.rand(1, 3), 0, Math.PI * 2); mhg.fill();
+      }
+      set.normalMap = heightToNormal(mhc, NS.mecha || 0.85);
     }
 
     _unitTexCache[kind] = set;

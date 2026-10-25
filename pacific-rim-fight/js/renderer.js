@@ -328,6 +328,36 @@
         sl.mesh.visible = true;
         sl.active = true;
       }
+
+      /* 必杀命中：大范围冲击烟尘（复用烟尘池，数量随画质缩放，手机上不爆池） */
+      if (level >= 3) R.spawnShockDust(pos, 1);
+    },
+
+    /* =======================================================================
+     * spawnShockDust(pos, scale)
+     *   必杀命中的冲击波烟尘：贴地向外扩散的厚重尘团，复用烟尘对象池。
+     * ==================================================================== */
+    spawnShockDust: function (pos, scale) {
+      if (!pos) return;
+      var p = R._pos(pos);
+      var s = scale || 1;
+      var pScale = (R._particleScale != null ? R._particleScale : 1);
+      var n = Math.max(2, Math.round(7 * s * pScale));
+      for (var i = 0; i < n; i++) {
+        var d = R._acquire(R._dusts);
+        if (!d) break;
+        var ang = U.rand(0, Math.PI * 2);
+        var spd = U.rand(4.5, 11) * s;
+        d.vel.set(Math.cos(ang) * spd, U.rand(0.5, 3.0), Math.sin(ang) * spd);
+        d.sprite.position.copy(p);
+        d.sprite.position.x += U.rand(-0.6, 0.6);
+        d.sprite.material.color.setHex(0x9aa6ad);
+        d.size = U.rand(1.6, 3.0) * s;
+        d.life = d.maxLife = U.rand(0.6, 1.1);
+        d.sprite.material.opacity = 0.5;
+        d.sprite.visible = true;
+        d.active = true;
+      }
     },
 
     /* =======================================================================

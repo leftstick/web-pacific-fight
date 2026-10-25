@@ -104,7 +104,12 @@
       mechaScratchCount: 90,  // 划痕条数
       kaijuScaleCount: 1400,  // 鳞片斑点数
       kaijuScaleGrid: 26,     // 鳞片网格间距
-      dirt: 0.18              // 污渍密度上限
+      dirt: 0.18,             // 污渍密度上限
+      /* 细节贴图强化：颜色贴图 1024、法线/粗糙度 512，避免近距离糊成色块 */
+      mapSize: 1024,
+      detailSize: 512,
+      anisotropy: 8,          // 各向异性过滤（斜视角装甲不再糊）
+      normalStrength: { mecha: 0.85, kaiju: 1.15 }  // 法线凹凸强度
     },
     /* ---------- 城市多层建筑 ---------- */
     building: {
@@ -308,7 +313,7 @@
     timing: {
       hitstop: 0.075,          // 命中顿帧（打击重量感核心）
       hitstopHeavy: 0.14,
-      hitstopUltimate: 0.45,
+      hitstopUltimate: 0.38,   // 必杀命中慢动作（0.2~0.4s，过长会拖慢节奏）
       comboWindow: 0.9,        // 连击窗口
       comboResetTime: 1.2
     },
@@ -771,6 +776,7 @@
       hit:     { type: 'noise', freq: 130, dur: 0.20, gain: 0.8 },   /* 命中：金属闷响 */
       block:   { type: 'square', freq: 520, dur: 0.14, gain: 0.35 },
       step:    { type: 'sine', freq: 52, dur: 0.22, gain: 0.5 },    /* 脚步：厚重低频 */
+      hydraulic:{ type: 'noise', freq: 320, dur: 0.22, gain: 0.32 },  /* 液压关节：出招起手短促机械声 */
       roar:    { type: 'sawtooth', freq: 80, dur: 1.5, gain: 0.9 },  /* 怪兽咆哮：低沉 */
       plasma:  { type: 'sawtooth', freq: 1400, dur: 0.18, gain: 0.3 }, /* 等离子链锯嗡鸣 */
       armorBreak: { type: 'noise', freq: 220, dur: 0.5, gain: 0.85 }, /* 装甲破碎：金属撕裂 */

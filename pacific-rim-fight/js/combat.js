@@ -350,6 +350,18 @@
       var len = Math.sqrt(kdx * kdx + kdz * kdz) || 1;
       result.knockDir = { x: kdx / len, y: 0, z: kdz / len };
 
+      /* --- 装甲破损视觉分层（纯视觉）：血量跨过 75/50/25% 阈值时局部装甲碎片脱落 --- */
+      if (!blocked && defender.hp > 0) {
+        var hpRatio = defender.hp / (defender.maxHp || 1);
+        var stage = hpRatio > 0.75 ? 0 : (hpRatio > 0.5 ? 1 : (hpRatio > 0.25 ? 2 : 3));
+        if (stage > (defender._debrisStage || 0)) {
+          defender._debrisStage = stage;
+          if (this.renderer && this.renderer.spawnArmorDebris) {
+            this.renderer.spawnArmorDebris(result.position, defender);
+          }
+        }
+      }
+
       /* --- 统计 --- */
       if (attacker === this.playerUnit) {
         this.stats.damageDealt += result.damage;

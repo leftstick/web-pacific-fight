@@ -198,32 +198,65 @@
       canvas.style.display = 'block';
       host.appendChild(canvas);
       M.preview.canvas = canvas;
-      var pr = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
-      pr.setPixelRatio(Math.min(global.devicePixelRatio || 1, RE.pixelRatioCap));
+      var pr = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
+      /* 预览是静态展示，允许比战斗更高的采样密度，保证边缘不锯齿、贴图不糊 */
+      pr.setPixelRatio(Math.min(global.devicePixelRatio || 1, 2.25));
       pr.toneMapping = THREE.ACESFilmicToneMapping;
-      pr.toneMappingExposure = RE.toneMapping.exposure;
+      pr.toneMappingExposure = 1.22;
       pr.outputColorSpace = THREE.SRGBColorSpace;
       M.preview.renderer = pr;
 
       var scene = new THREE.Scene();
       M.preview.scene = scene;
-      var cam = new THREE.PerspectiveCamera(38, 1, 0.5, 300);
-      cam.position.set(0, 9.5, 30);
-      cam.lookAt(0, 6, 0);
+      var cam = new THREE.PerspectiveCamera(34, 1, 0.5, 300);
+      cam.position.set(0, 8.6, 26);
+      cam.lookAt(0, 6.2, 0);
       M.preview.camera = cam;
 
-      scene.add(new THREE.AmbientLight(0x404a55, 1.1));
-      var key = new THREE.DirectionalLight(0xdff1ff, 1.5);
-      key.position.set(-14, 26, 18);
+      /* IBL 环境反射：金属装甲没有环境贴图会渲染成死黑色块 */
+      var ad = M.addons || {};
+      if (ad.RoomEnvironment && THREE.PMREMGenerator) {
+        try {
+          var pmrem = new THREE.PMREMGenerator(pr);
+          var room = new ad.RoomEnvironment();
+          var rt = pmrem.fromScene(room, 0.03);
+          scene.environment = rt.texture;
+          if ('environmentIntensity' in scene) scene.environmentIntensity = 0.9;
+          if (room.dispose) room.dispose();
+          pmrem.dispose();
+          M.preview.envRT = rt;
+        } catch (e) { console.warn('[Preview] IBL 生成失败，使用直射光', e && e.message); }
+      }
+
+      scene.add(new THREE.AmbientLight(0x50606e, 1.15));
+      var key = new THREE.DirectionalLight(0xffffff, 2.6);
+      key.position.set(-13, 24, 16);
       scene.add(key);
-      var rim = new THREE.DirectionalLight(PALAccent(), 1.1);
-      rim.position.set(18, 10, -14);
+      var rim = new THREE.DirectionalLight(PALAccent(), 1.9);
+      rim.position.set(17, 11, -13);
       scene.add(rim);
+      /* 冷色底部补光：勾出装甲下缘，避免整体变成平面剪影 */
+      var fill = new THREE.DirectionalLight(0x6fd0ff, 0.75);
+      fill.position.set(4, -8, 12);
+      scene.add(fill);
 
       /* 预览用模型：与战斗用模型独立，避免同一 Object3D 归属两个场景 */
       var group = new THREE.Group();
       scene.add(group);
       M.preview.group = group;
+
+      /* 脚下软阴影：没有接触阴影时模型会像浮在空中的色块 */
+      var shTex = (function () {
+        var c = document.createElement('canvas'); c.width = c.height = 128;
+        var g = c.getContext('2d');
+        var grd = g.createRadialGradient(64, 64, 2, 64, 64, 62);
+        grd.addColorStop(0, 'rgba(0,0,0,0.72)');
+        grd.addColorStop(0.55, 'rgba(0,0,0,0.28)');
+        grd.addColorStop(1, 'rgba(0,0,0,0)');
+        g.fillStyle = grd; g.fillRect(0, 0, 128, 128);
+        return new THREE.CanvasTexture(c);
+      })();
+
       var defs = CONFIG.units.mechas.concat(CONFIG.units.kaiju);
       Promise.all(defs.map(function (def) {
         return GAME.Models.prepareUnit(def).then(function (p) {
@@ -231,10 +264,57 @@
           root.position.set(def.faction === 'kaiju' ? 6.5 : -6.5, 0, 0);
           root.rotation.y = def.faction === 'kaiju' ? Math.PI * 0.85 : -Math.PI * 0.15;
           root.visible = false;
+          /* 接触阴影（水平放置，不随朝向摆动） */
+          var sh = new THREE.Mesh(
+            new THREE.PlaneGeometry(def.height * 1.55, def.height * 1.55),
+            new THREE.MeshBasicMaterial({ map: shTex, transparent: true, opacity: 0.62, depthWrite: false })
+          );
+          sh.rotation.x = -Math.PI / 2;
+          sh.position.y = 0.03;
+          sh.renderOrder = -1;
+          root.add(sh);
           group.add(root);
-          M.previewModels[def.id] = { root: root, clips: p.clips, def: def };
+
+          /* 待机动画：预览模型不再僵直站立，缓慢呼吸 + 关节微动 */
+          var mixer = null;
+          if (p.clips && p.clips.length) {
+            try {
+              mixer = new THREE.AnimationMixer(root);
+              var idleClip = null;
+              for (var ci = 0; ci < p.clips.length; ci++) {
+                if (p.clips[ci] && p.clips[ci].name === 'idle') { idleClip = p.clips[ci]; break; }
+              }
+              if (idleClip) {
+                var idleAct = mixer.clipAction(idleClip);
+                idleAct.setLoop(THREE.LoopRepeat, Infinity);
+                idleAct.play();
+              }
+            } catch (e) { mixer = null; }
+          }
+          M.previewModels[def.id] = { root: root, clips: p.clips, def: def, mixer: mixer, steamT: U.rand(0.4, 1.2) };
         });
       })).then(Main.refreshPreview);
+
+      /* 预览蒸汽粒子池：肩部/背甲缓慢排气，复用固定 sprite，不逐帧新建 */
+      var steamTex = (function () {
+        var c = document.createElement('canvas'); c.width = c.height = 64;
+        var g = c.getContext('2d');
+        var grd = g.createRadialGradient(32, 32, 1, 32, 32, 31);
+        grd.addColorStop(0, 'rgba(255,255,255,0.95)');
+        grd.addColorStop(0.45, 'rgba(220,235,245,0.45)');
+        grd.addColorStop(1, 'rgba(210,230,240,0)');
+        g.fillStyle = grd; g.fillRect(0, 0, 64, 64);
+        return new THREE.CanvasTexture(c);
+      })();
+      M.preview.steamPool = [];
+      for (var si = 0; si < 14; si++) {
+        var sp = new THREE.Sprite(new THREE.SpriteMaterial({
+          map: steamTex, transparent: true, opacity: 0, depthWrite: false, color: 0xdfeaf2
+        }));
+        sp.visible = false;
+        scene.add(sp);
+        M.preview.steamPool.push({ sprite: sp, life: 0, maxLife: 1, vel: new THREE.Vector3() });
+      }
     },
 
     refreshPreview: function () {
@@ -265,7 +345,46 @@
         if (!e.root.visible) continue;
         var base = e.def.faction === 'kaiju' ? Math.PI * 0.85 : -Math.PI * 0.15;
         e.root.rotation.y = base + Math.sin(pv.angle) * 0.55;
+        if (e.mixer) e.mixer.update(dt);
+
+        /* 关节蒸汽：肩部/背甲缓慢排气（死亡循环复用池内 sprite） */
+        e.steamT = (e.steamT || 0) - dt;
+        if (e.steamT <= 0) {
+          e.steamT = U.rand(0.55, 1.0);
+          var p = null, pool = pv.steamPool || [];
+          for (var pi = 0; pi < pool.length; pi++) { if (pool[pi].life <= 0) { p = pool[pi]; break; } }
+          if (p) {
+            var H = e.def.height || 9;
+            var isK = e.def.faction === 'kaiju';
+            var lx = (isK ? 0.16 : 0.09) * H * (Math.random() < 0.5 ? -1 : 1);
+            p.sprite.position.set(lx, (isK ? 0.62 : 0.6) * H, isK ? -0.08 * H : 0);
+            e.root.updateMatrixWorld(true);
+            e.root.localToWorld(p.sprite.position);
+            p.vel.set(U.rand(-0.25, 0.25), U.rand(0.7, 1.4), U.rand(-0.2, 0.2));
+            p.life = p.maxLife = U.rand(0.9, 1.5);
+            p.sprite.material.opacity = 0.0;
+            p.sprite.scale.setScalar(1.0);
+            p.sprite.visible = true;
+          }
+        }
       }
+
+      /* 蒸汽池推进：上升 + 扩散 + 淡出 */
+      var pool2 = pv.steamPool || [];
+      for (var sj = 0; sj < pool2.length; sj++) {
+        var q = pool2[sj];
+        if (q.life <= 0) continue;
+        q.life -= dt;
+        if (q.life <= 0) { q.sprite.visible = false; continue; }
+        var k = q.life / q.maxLife;
+        q.sprite.position.x += q.vel.x * dt;
+        q.sprite.position.y += q.vel.y * dt;
+        q.sprite.position.z += q.vel.z * dt;
+        var grow = 1.0 + (1 - k) * 2.4;
+        q.sprite.scale.setScalar(grow);
+        q.sprite.material.opacity = Math.sin(Math.min(1, (1 - k) * 6) * Math.PI * 0.5) * k * 0.42;
+      }
+
       pv.renderer.render(pv.scene, pv.camera);
     },
 
