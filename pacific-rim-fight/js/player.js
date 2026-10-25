@@ -685,6 +685,25 @@
     this._speed = Math.sqrt(this._vx * this._vx + this._vz * this._vz);
     this._stepT += dt * (this._speed * 0.55 + 0.02);
     this._bob = canMove ? Math.min(1, this._speed / (maxSpeed || 1)) : 0;
+
+    /* 机甲关节蒸汽排气：移动/攻击时更频繁，静止时低频 */
+    this._steamT = (this._steamT || 0) - dt;
+    var steamInterval = this._speed > 0.5 ? 0.22 : (this.moveInst ? 0.18 : 0.5);
+    if (this._steamT <= 0) {
+      this._steamT = steamInterval;
+      var rd = GAME.Renderer;
+      if (rd && rd.spawnSteam) {
+        var H = this.def.height || 9;
+        var sx = this.position.x, sy = this.position.y, sz = this.position.z;
+        var sgn = this.facing || 1;
+        rd.spawnSteam({ x: sx - sgn * 0.9, y: sy + H * 0.62, z: sz });   // 左肩
+        rd.spawnSteam({ x: sx + sgn * 0.9, y: sy + H * 0.62, z: sz });   // 右肩
+        if (this._speed > 0.5 || this.moveInst) {
+          rd.spawnSteam({ x: sx - sgn * 0.5, y: sy + H * 0.22, z: sz }); // 左膝
+          rd.spawnSteam({ x: sx + sgn * 0.5, y: sy + H * 0.22, z: sz }); // 右膝
+        }
+      }
+    }
   };
 
   /* 最大移速 = 基础移速 * def.speed * speedScale（力竭惩罚） */

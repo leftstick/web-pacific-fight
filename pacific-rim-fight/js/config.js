@@ -78,14 +78,14 @@
   var ART_CONFIG = {
     /* ---------- 单位 PBR 材质默认值 ---------- */
     material: {
-      mecha: { metalness: 0.62, roughness: 0.5,  envMapIntensity: 1.0 },
-      accent:{ metalness: 0.72, roughness: 0.42, envMapIntensity: 1.0 },
-      dark:  { metalness: 0.5,  roughness: 0.66, envMapIntensity: 0.8 },
-      kaijuSkin: { metalness: 0.05, roughness: 0.9 },
-      kaijuBelly:{ metalness: 0.05, roughness: 0.85 },
-      kaijuPlate:{ metalness: 0.35, roughness: 0.8 },
+      mecha: { metalness: 0.62, roughness: 0.32,  envMapIntensity: 1.35 },
+      accent:{ metalness: 0.72, roughness: 0.26, envMapIntensity: 1.35 },
+      dark:  { metalness: 0.5,  roughness: 0.45, envMapIntensity: 1.1 },
+      kaijuSkin: { metalness: 0.08, roughness: 0.52 },   /* 生物黏液：略湿反光 */
+      kaijuBelly:{ metalness: 0.05, roughness: 0.55 },
+      kaijuPlate:{ metalness: 0.35, roughness: 0.48 },   /* 甲壳湿润 */
       defaultMetalness: 0.55,
-      defaultRoughness: 0.5
+      defaultRoughness: 0.4
     },
     /* ---------- 发光 ---------- */
     glow: {

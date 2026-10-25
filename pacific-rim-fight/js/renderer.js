@@ -360,6 +360,30 @@
     },
 
     /* =======================================================================
+     * spawnSteam(pos)
+     *   机甲关节蒸汽排气：复用烟尘池，白色蒸汽向上飘散 + 轻微扩散，
+     *   寿命短、不发光。用于机甲肩/膝关节周期性排气。
+     * ==================================================================== */
+    spawnSteam: function (pos) {
+      if (!pos) return;
+      var p = R._pos(pos);
+      var pScale = (R._particleScale != null ? R._particleScale : 1);
+      var n = Math.max(1, Math.round(3 * pScale));
+      for (var i = 0; i < n; i++) {
+        var d = R._acquire(R._dusts);
+        if (!d) break;
+        d.vel.set(U.rand(-0.3, 0.3), U.rand(1.5, 3.2), U.rand(-0.3, 0.3));
+        d.sprite.position.copy(p);
+        d.sprite.material.color.setHex(0xeaf2f7);
+        d.size = U.rand(0.8, 1.6);
+        d.life = d.maxLife = U.rand(0.5, 0.9);
+        d.sprite.material.opacity = 0.6;
+        d.sprite.visible = true;
+        d.active = true;
+      }
+    },
+
+    /* =======================================================================
      * collapseBuilding(building, dir)
      *   隐藏建筑网格，抛掷碎片（Ammo 动态刚体；不可用时走运动学回退），
      *   叠加尘雾 + 橙色闪光 + 短时点光；碎片在 CONFIG.combat.destructible.debrisLife
