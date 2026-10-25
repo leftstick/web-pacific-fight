@@ -165,6 +165,18 @@
     var hp = unit.hp || 0, maxHp = unit.maxHp || 1;
     var frac = U.clamp(hp / maxHp, 0, 1);
 
+    /* 装甲条（先于血量承受伤害；maxArmor 为 0 时隐藏） */
+    var maxAr = unit.maxArmor || 0;
+    var arFill = D(pfx + '-armor-fill');
+    if (arFill) {
+      if (maxAr > 0) {
+        arFill.parentElement.style.display = '';
+        setFill(arFill, U.clamp((unit.armor || 0) / maxAr, 0, 1), cache, 'armor');
+      } else {
+        arFill.parentElement.style.display = 'none';
+      }
+    }
+
     setFill(D(pfx + '-hp-fill'), frac, cache, 'hpFill');
     updateSegments(D(pfx + '-hp-segments'), frac, cache, 'hpSeg');
 
@@ -744,6 +756,17 @@
 
     /* 眩晕满值：眩晕提示 */
     U.bus.on('combat:stunned', function (p) { UI.showStunNotice(p && p.unit); });
+
+    /* 装甲破防：中央提示 */
+    U.bus.on('combat:armor-break', function (p) {
+      var isPlayer = p && p.unit === UI.player;
+      UI.showCenterText(isPlayer ? '装甲破损' : '敌甲壳破裂', { duration: 1.0, style: 'armor-break' });
+    });
+    /* 完美格挡：中央提示 */
+    U.bus.on('combat:perfect-guard', function (p) {
+      var isPlayer = p && p.unit === UI.player;
+      if (isPlayer) UI.showCenterText('格挡成功', { duration: 0.7, style: 'perfect' });
+    });
 
     /* 击杀：中央 K.O. */
     U.bus.on('combat:ko', function () {

@@ -473,6 +473,7 @@
     faction: 'mecha',
     height: 9.5,
     radius: 3.2,
+    armorRatio: 0.35,            /* 装甲值 = maxHp * 该比例（先于血量承受伤害） */
     animations: {
       idle: 'idle', walk: 'walk', run: 'run', light: 'light', heavy: 'heavy',
       skill: 'skill', dodge: 'dodge', block: 'block', hit: 'hit', death: 'death',
@@ -483,6 +484,7 @@
     faction: 'kaiju',
     height: 11.0,
     radius: 3.6,
+    armorRatio: 0.25,            /* 怪兽甲壳：装甲值比例略低，但甲壳破防后更脆 */
     animations: {
       idle: 'idle', walk: 'walk', run: 'run', bite: 'bite', tail: 'tail',
       charge: 'charge', hit: 'hit', roar: 'roar', death: 'death'

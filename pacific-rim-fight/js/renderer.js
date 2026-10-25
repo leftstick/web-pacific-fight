@@ -331,6 +331,35 @@
     },
 
     /* =======================================================================
+     * spawnArmorDebris(position, unit)
+     *   装甲破防碎片：复用火花池，金属碎片色（灰/暗橙），带重力下落，
+     *   数量随画质缩放。不新建对象。
+     * ==================================================================== */
+    spawnArmorDebris: function (position, unit) {
+      if (!position) return;
+      var pos = R._pos(position);
+      var pScale = (R._particleScale != null ? R._particleScale : 1);
+      var isMecha = unit && unit.def && unit.def.faction === 'mecha';
+      var colors = isMecha ? [0x8a929a, 0x5a626a, 0xc0392b] : [0x3f4a52, 0x6b7276, 0xff7a1e];
+      var n = Math.round(16 * pScale);
+      for (var i = 0; i < n; i++) {
+        var d = R._acquire(R._sparks);
+        if (!d) break;
+        d.vel.set(U.rand(-1, 1), U.rand(0.4, 1.4), U.rand(-1, 1)).normalize();
+        d.vel.multiplyScalar(U.rand(8, 18));
+        d.sprite.position.copy(pos);
+        d.sprite.position.y += U.rand(0, 1.5);
+        d.sprite.material.color.setHex(colors[i % colors.length]);
+        d.size = U.rand(0.4, 0.9);
+        d.life = d.maxLife = U.rand(0.6, 1.1);
+        d.sprite.material.opacity = 1;
+        d.sprite.visible = true;
+        d.active = true;
+        d.debris = true;   /* 标记：受重力影响（在 _updateFx 中下坠） */
+      }
+    },
+
+    /* =======================================================================
      * collapseBuilding(building, dir)
      *   隐藏建筑网格，抛掷碎片（Ammo 动态刚体；不可用时走运动学回退），
      *   叠加尘雾 + 橙色闪光 + 短时点光；碎片在 CONFIG.combat.destructible.debrisLife

@@ -286,10 +286,21 @@
       var kb = move.knockback * (blocked ? (1 - C.block.knockbackReduction) : 1);
       var killed = false;
 
-      /* --- 资源扣除 --- */
+      /* --- 资源扣除（装甲先扛，溢出扣血）--- */
+      var armorBroken = false;
+      var armorDamage = 0;
       if (defender.hp > 0) {
-        defender.hp = Math.max(0, defender.hp - dmg);
-        if (defender.hp <= 0) killed = true;
+        var remaining = dmg;
+        if (defender.maxArmor > 0 && defender.armor > 0) {
+          armorDamage = Math.min(defender.armor, remaining);
+          defender.armor = Math.max(0, defender.armor - armorDamage);
+          remaining -= armorDamage;
+          if (defender.armor <= 0 && armorDamage > 0) armorBroken = true;
+        }
+        if (remaining > 0) {
+          defender.hp = Math.max(0, defender.hp - remaining);
+          if (defender.hp <= 0) killed = true;
+        }
       }
 
       /* --- 受击方能量与耐力 --- */
@@ -309,6 +320,8 @@
 
       var result = {
         damage: Math.round(dmg),
+        armorDamage: Math.round(armorDamage),
+        armorBroken: armorBroken,
         blocked: blocked,
         broken: broken,
         perfect: perfect,
@@ -370,6 +383,20 @@
       if (move.breakGuard && shakeOn && this.renderer && this.renderer.cameraShake) {
         this.renderer.cameraShake(2);                          /* 破防 → 2 级震动 */
       }
+
+      /* --- 装甲破防：碎片飞溅 + 震动 + 事件 --- */
+      if (armorBroken) {
+        if (shakeOn && this.renderer && this.renderer.cameraShake) this.renderer.cameraShake(2);
+        if (this.renderer && this.renderer.spawnImpact) {
+          this.renderer.spawnImpact(result.position, 2, result.facing, { combo: 'heavy' });
+        }
+        if (this.renderer && this.renderer.spawnArmorDebris) {
+          this.renderer.spawnArmorDebris(result.position, defender);
+        }
+        U.bus.emit('combat:armor-break', { unit: defender, attacker: attacker });
+      }
+      /* 完美格挡：通知 UI 弹提示 */
+      if (perfect) U.bus.emit('combat:perfect-guard', { unit: defender });
 
       /* --- 场景破坏：命中点附近的建筑也会受损 --- */
       this.splashDestructibles(result.position, result.damage * (move.key === 'ultimate' ? 1.4 : 0.5), result.knockDir);

@@ -82,9 +82,11 @@
     this.facing = this._initFacing;
     this.yaw = this.facing > 0 ? 0 : Math.PI;
 
-    /* --- 三大属性 --- */
+    /* --- 三大属性 + 装甲 --- */
     this.maxHp = def.hp || 1000;
     this.hp = this.maxHp;
+    this.maxArmor = Math.round(this.maxHp * (def.armorRatio || 0));
+    this.armor = this.maxArmor;
     this.maxStamina = def.stamina || STAM.max;
     this.stamina = this.maxStamina;
     this.maxEnergy = ENERGY.max;
@@ -1039,6 +1041,7 @@
    * ======================================================================== */
   Player.prototype.reset = function () {
     this.hp = this.maxHp;
+    this.armor = this.maxArmor;
     this.stamina = this.maxStamina;
     this.energy = CONFIG.debug.infiniteEnergy ? this.maxEnergy : 0;
     this.stun = 0; this.stunTimer = 0; this.stunDecayDelay = 0;

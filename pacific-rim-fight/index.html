@@ -682,6 +682,8 @@ button { font-family: inherit; }
 .bar-fill.stamina { background: linear-gradient(180deg, #d6ffe9, #3fc49a); color: #69ffc8; }
 .bar-fill.energy { background: linear-gradient(180deg, #ffe9b8, #e89838); color: #ffc86b; }
 .bar-fill.stun { background: linear-gradient(180deg, #ffc4b8, #c44232); color: #ff6a52; }
+.bar-fill.armor { background: linear-gradient(180deg, #cfe0ec 0%, #7fa8c4 50%, #4a7a96 100%); color: #9fc4e0; }
+.hud-right .bar-fill.armor { background: linear-gradient(180deg, #ffe2b0 0%, #d8964a 50%, #9c6426 100%); color: #ffc070; }
 
 .hud-flags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 .hud-right .hud-flags { justify-content: flex-end; }
@@ -717,6 +719,8 @@ button { font-family: inherit; }
   animation: center-pop 0.5s cubic-bezier(0.2, 1.4, 0.4, 1) both;
 }
 @keyframes center-pop { 0% { transform: scale(0.6); opacity: 0; } 60% { transform: scale(1.08); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
+.center-text.armor-break { color: #ff9a6a; text-shadow: 0 0 22px rgba(255, 120, 60, 0.85), 0 0 46px rgba(255, 80, 40, 0.4); }
+.center-text.perfect { color: #9fe8ff; text-shadow: 0 0 22px rgba(111, 208, 255, 0.9), 0 0 46px rgba(111, 208, 255, 0.45); }
 .combo-display {
   margin-top: 6px;
   font-size: clamp(18px, 2.6vw, 34px);
@@ -1420,6 +1424,9 @@ button { font-family: inherit; }
     <!-- 玩家（左） -->
     <div class="hud-side hud-left">
       <div class="hud-name" id="p-name">游侠 · 赤色风暴</div>
+      <div class="bar sub armor-bar">
+        <div class="bar-track"><div class="bar-fill armor" id="p-armor-fill"></div></div>
+      </div>
       <div class="bar hp-bar">
         <div class="bar-track">
           <div class="bar-fill hp" id="p-hp-fill"></div>
@@ -1450,6 +1457,9 @@ button { font-family: inherit; }
     <!-- 敌方（右） -->
     <div class="hud-side hud-right">
       <div class="hud-name" id="e-name">镰刃魔</div>
+      <div class="bar sub armor-bar">
+        <div class="bar-track"><div class="bar-fill armor" id="e-armor-fill"></div></div>
+      </div>
       <div class="bar hp-bar">
         <div class="bar-track">
           <div class="bar-fill hp" id="e-hp-fill"></div>
