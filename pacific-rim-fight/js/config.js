@@ -272,7 +272,7 @@
     minDistance: 22,
     maxDistance: 54,
     maxZ: 26,                 // 相机 z 上限（永远位于战场 +Z 侧）
-    framePadding: 5,          // 自动取景时双方外扩距离（收紧 → 单位占屏更大）
+    framePadding: 9,          // 自动取景时双方外扩距离（含单位自身体宽，保证双方完整入镜）
     followLerp: 4.2,          // 相机位置跟随平滑
     distLerp: 2.6,            // 距离缩放平滑
     heightLerp: 3.0,
