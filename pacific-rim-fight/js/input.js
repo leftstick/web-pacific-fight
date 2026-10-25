@@ -530,6 +530,25 @@
       return Input;
     },
 
+    /* ---------------- 手柄震动 ---------------- */
+    /* duration(ms), strongMotor(0~1), weakMotor(0~1)。命中重击时调用。 */
+    vibrate: function (duration, strong, weak) {
+      try {
+        var gps = safeGetGamepads();
+        if (!gps) return;
+        for (var i = 0; i < gps.length; i++) {
+          var pad = gps[i];
+          if (pad && pad.vibrationActuator && typeof pad.vibrationActuator.playEffect === 'function') {
+            pad.vibrationActuator.playEffect('dual-rumble', {
+              duration: duration || 120,
+              strongMagnitude: (strong != null ? strong : 0.6),
+              weakMagnitude: (weak != null ? weak : 0.3)
+            });
+          }
+        }
+      } catch (e) { /* 静默忽略 */ }
+    },
+
     /* ---------------- 每帧更新 ---------------- */
     update: function (dt) {
       dt = (typeof dt === 'number' && dt > 0) ? dt : 0.016;

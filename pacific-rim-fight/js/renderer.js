@@ -384,6 +384,31 @@
     },
 
     /* =======================================================================
+     * spawnSplash(pos)
+     *   机甲脚步溅水：复用火花池，蓝白色水花向四周低角度飞溅，带重力。
+     *   用于雨夜机甲移动/落地时的水花。
+     * ==================================================================== */
+    spawnSplash: function (pos) {
+      if (!pos) return;
+      var p = R._pos(pos);
+      var pScale = (R._particleScale != null ? R._particleScale : 1);
+      var n = Math.max(1, Math.round(4 * pScale));
+      for (var i = 0; i < n; i++) {
+        var d = R._acquire(R._sparks);
+        if (!d) break;
+        var ang = U.rand(0, Math.PI * 2);
+        d.vel.set(Math.cos(ang) * U.rand(1, 3), U.rand(0.8, 2.2), Math.sin(ang) * U.rand(1, 3));
+        d.sprite.position.copy(p);
+        d.sprite.material.color.setHex(i % 2 ? 0xbfd8ff : 0xffffff);
+        d.size = U.rand(0.3, 0.6);
+        d.life = d.maxLife = U.rand(0.3, 0.55);
+        d.sprite.material.opacity = 0.9;
+        d.sprite.visible = true;
+        d.active = true;
+      }
+    },
+
+    /* =======================================================================
      * collapseBuilding(building, dir)
      *   隐藏建筑网格，抛掷碎片（Ammo 动态刚体；不可用时走运动学回退），
      *   叠加尘雾 + 橙色闪光 + 短时点光；碎片在 CONFIG.combat.destructible.debrisLife

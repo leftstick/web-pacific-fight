@@ -389,6 +389,15 @@
         this.renderer.cameraShake(2);                          /* 破防 → 2 级震动 */
       }
 
+      /* 手柄震动：重击/技能/必杀命中或玩家受重击时触发 */
+      var isHeavy = (move.key === 'heavy' || move.key === 'skill' || move.key === 'charge' || move.key === 'ultimate' || move.key === 'tail');
+      var playerInvolved = (attacker === this.playerUnit || defender === this.playerUnit);
+      if (isHeavy && playerInvolved && global.GAME.Input && GAME.Input.vibrate) {
+        var dur = move.key === 'ultimate' ? 280 : 140;
+        var str = move.key === 'ultimate' ? 0.9 : 0.65;
+        GAME.Input.vibrate(dur, str, str * 0.5);
+      }
+
       /* --- 装甲破防：碎片飞溅 + 震动 + 事件 --- */
       if (armorBroken) {
         if (shakeOn && this.renderer && this.renderer.cameraShake) this.renderer.cameraShake(2);

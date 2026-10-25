@@ -685,8 +685,17 @@
 
     /* 步态：速度大小 → 步频 / 抖动强度 */
     this._speed = Math.sqrt(this._vx * this._vx + this._vz * this._vz);
+    var prevStep = Math.floor(this._stepT);
     this._stepT += dt * (this._speed * 0.55 + 0.02);
     this._bob = canMove ? Math.min(1, this._speed / (maxSpeed || 1)) : 0;
+
+    /* 脚步落地溅水（雨夜地面积水） */
+    if (this._speed > 1.0 && Math.floor(this._stepT) > prevStep) {
+      var rd2 = GAME.Renderer;
+      if (rd2 && rd2.spawnSplash) {
+        rd2.spawnSplash({ x: this.position.x, y: this.position.y + 0.1, z: this.position.z });
+      }
+    }
 
     /* 机甲关节蒸汽排气：移动/攻击时更频繁，静止时低频 */
     this._steamT = (this._steamT || 0) - dt;
