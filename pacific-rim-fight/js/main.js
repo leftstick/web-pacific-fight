@@ -199,8 +199,9 @@
       host.appendChild(canvas);
       M.preview.canvas = canvas;
       var pr = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
-      /* 预览是静态展示，允许比战斗更高的采样密度，保证边缘不锯齿、贴图不糊 */
-      pr.setPixelRatio(Math.min(global.devicePixelRatio || 1, 2.25));
+      /* 预览是静态展示，允许比战斗更高的采样密度，保证边缘不锯齿、贴图不糊；
+         1x 屏幕至少 1.5x 超采样，避免预览框小尺寸下边缘发糊 */
+      pr.setPixelRatio(Math.max(1.5, Math.min(global.devicePixelRatio || 1, 2.25)));
       pr.toneMapping = THREE.ACESFilmicToneMapping;
       pr.toneMappingExposure = 1.22;
       pr.outputColorSpace = THREE.SRGBColorSpace;
@@ -209,8 +210,9 @@
       var scene = new THREE.Scene();
       M.preview.scene = scene;
       var cam = new THREE.PerspectiveCamera(34, 1, 0.5, 300);
-      cam.position.set(0, 8.6, 26);
-      cam.lookAt(0, 6.2, 0);
+      /* 机位贴近模型并压低注视点：模型在预览框内更大更饱满，避免上半框大片空白 */
+      cam.position.set(0, 7.2, 23.5);
+      cam.lookAt(0, 4.6, 0);
       M.preview.camera = cam;
 
       /* IBL 环境反射：金属装甲没有环境贴图会渲染成死黑色块 */
@@ -228,15 +230,17 @@
         } catch (e) { console.warn('[Preview] IBL 生成失败，使用直射光', e && e.message); }
       }
 
-      scene.add(new THREE.AmbientLight(0x50606e, 1.15));
-      var key = new THREE.DirectionalLight(0xffffff, 2.6);
+      /* 半球光给出上亮下暗的自然体积感（纯环境光会让模型像平涂色块） */
+      scene.add(new THREE.HemisphereLight(0x8fc4e8, 0x0a141a, 0.55));
+      scene.add(new THREE.AmbientLight(0x50606e, 0.95));
+      var key = new THREE.DirectionalLight(0xffffff, 2.9);
       key.position.set(-13, 24, 16);
       scene.add(key);
-      var rim = new THREE.DirectionalLight(PALAccent(), 1.9);
+      var rim = new THREE.DirectionalLight(PALAccent(), 2.2);
       rim.position.set(17, 11, -13);
       scene.add(rim);
       /* 冷色底部补光：勾出装甲下缘，避免整体变成平面剪影 */
-      var fill = new THREE.DirectionalLight(0x6fd0ff, 0.75);
+      var fill = new THREE.DirectionalLight(0x6fd0ff, 0.9);
       fill.position.set(4, -8, 12);
       scene.add(fill);
 

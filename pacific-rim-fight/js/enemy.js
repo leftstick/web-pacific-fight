@@ -507,6 +507,7 @@
       this._lastX = this._spawn.x; this._lastZ = this._spawn.z;
       this._leanX = 0; this._leanZ = 0;
       this._debrisStage = 0;
+      this._frenzyState = false;
       this.comboHits = 0;
       this.comboTimer = 0;
       this.comboDamageBonus = 1;
@@ -1163,7 +1164,13 @@
         }
       }
       var once = (this.dead || this.stunned);
-      this.anim(clip, { once: once, clamp: once, fade: clip === 'hit' ? 0.1 : 0.2 });
+      /* 狂暴（血量 ≤35%）：只加速待机/移动/咆哮等循环动作的播放速度，
+         攻击片段仍与命中时序严格同步，避免动作提前结束导致判定错位。 */
+      var frenzy = !this.dead && this.maxHp > 0 && (this.hp / this.maxHp) <= 0.35;
+      var tscale = (frenzy && (clip === 'idle' || clip === 'walk' || clip === 'run' || clip === 'roar')) ? 1.18 : 1;
+      var force = this._frenzyState !== frenzy;
+      this._frenzyState = frenzy;
+      this.anim(clip, { once: once, clamp: once, fade: clip === 'hit' ? 0.1 : 0.2, timeScale: tscale, force: force });
     },
 
     /* 偶尔咆哮：仅在 idle/patrol 且冷却结束时节流触发 */

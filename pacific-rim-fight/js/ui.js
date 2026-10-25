@@ -339,7 +339,10 @@
   function buildFightPrompts() {
     var fp = D('fight-prompts');
     if (!fp) return;
+    /* 设备徽章与按键提示同处 #fight-prompts，清空重建时必须保留它，否则会被一起移除 */
+    var badge = D('device-badge');
     fp.innerHTML = '';
+    if (badge) fp.appendChild(badge);
     var acts = ['light', 'heavy', 'dodge', 'block', 'skill', 'ultimate'];
     for (var i = 0; i < acts.length; i++) fp.appendChild(promptItem(acts[i]));
     var sp = D('select-prompts');
