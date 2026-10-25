@@ -91,7 +91,7 @@
     _zoomActive: false, _zoomT: 0,
     _debugHitboxes: false,
     _sunDir: null,
-    _vignettePass: null, _bloomPass: null,
+    _vignettePass: null, _bloomPass: null, _dofPass: null,
 
     /* =======================================================================
      * init(three, addons, canvas) -> renderer 实例
@@ -783,6 +783,15 @@
       cam.lookAt(R._look);
       cam.rotation.z += rotZ;
       cam.updateMatrixWorld();
+
+      /* 景深：焦点平面跟随当前机位（主体及其前方全清晰，只虚化远景城市），
+         抽样步长按后处理缓冲的真实像素尺寸换算，避免高 DPI 下虚化过强 */
+      if (R._dofPass) {
+        var du = R._dofPass.uniforms;
+        du.uFocus.value = z + ((RENDER.dof && RENDER.dof.focusOffset) || 26);
+        var rt1 = R.composer && R.composer.renderTarget1;
+        if (rt1 && rt1.width > 0) du.uTexel.value.set(1 / rt1.width, 1 / rt1.height);
+      }
     },
 
     /* =======================================================================
@@ -1192,7 +1201,63 @@
       };
     },
 
-    /* 后处理链：RenderPass -> UnrealBloom -> 内联 ShaderPass 暗角 -> FilmPass 颗粒 -> OutputPass
+    /* 景深着色器定义：按深度只虚化「相机焦点平面之后」的远景（城市天际线/远楼），
+     *   主体机甲怪兽位于焦点平面之前或附近，保持全清晰。
+     *   5 抽样十字模糊，成本可控；低画质预设直接关闭该 pass。 */
+    _dofShaderDef: function () {
+      var dcfg = RENDER.dof || {};
+      return {
+        uniforms: {
+          tDiffuse: { value: null },
+          tDepth: { value: null },
+          uNear: { value: CAM.near },
+          uFar: { value: CAM.far },
+          uFocus: { value: CAM.baseDistance + (dcfg.focusOffset || 26) },
+          uRange: { value: dcfg.range || 150 },
+          uStrength: { value: dcfg.strength || 0.55 },
+          uMaxPx: { value: dcfg.maxPx || 3.2 },
+          uTexel: { value: new THREE.Vector2(1 / 1280, 1 / 720) }
+        },
+        vertexShader: [
+          'varying vec2 vUv;',
+          'void main() {',
+          '  vUv = uv;',
+          '  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);',
+          '}'
+        ].join('\n'),
+        fragmentShader: [
+          'varying vec2 vUv;',
+          'uniform sampler2D tDiffuse;',
+          'uniform sampler2D tDepth;',
+          'uniform float uNear;',
+          'uniform float uFar;',
+          'uniform float uFocus;',
+          'uniform float uRange;',
+          'uniform float uStrength;',
+          'uniform float uMaxPx;',
+          'uniform vec2 uTexel;',
+          'void main() {',
+          '  vec4 base = texture2D(tDiffuse, vUv);',
+          '  float d = texture2D(tDepth, vUv).x;',
+          '  float z = d * 2.0 - 1.0;',
+          '  float dz = (2.0 * uNear * uFar) / (uFar + uNear - z * (uFar - uNear));',
+          '  float coc = clamp((dz - uFocus) / max(uRange, 1.0), 0.0, 1.0);',
+          '  coc = coc * coc * uStrength;',
+          '  if (coc < 0.003) { gl_FragColor = base; return; }',
+          '  vec2 r = uTexel * (coc * uMaxPx);',
+          '  vec4 c = base * 0.40;',
+          '  c += texture2D(tDiffuse, vUv + vec2( r.x, 0.0)) * 0.15;',
+          '  c += texture2D(tDiffuse, vUv + vec2(-r.x, 0.0)) * 0.15;',
+          '  c += texture2D(tDiffuse, vUv + vec2(0.0,  r.y)) * 0.15;',
+          '  c += texture2D(tDiffuse, vUv + vec2(0.0, -r.y)) * 0.15;',
+          '  gl_FragColor = c;',
+          '}'
+        ].join('\n')
+      };
+    },
+
+    /* =======================================================================
+     * 后处理链：RenderPass -> [景深] -> UnrealBloom -> 暗角 -> FilmPass -> OutputPass
      *   P3：每个 pass 是否启用 = 画质预设 enabled AND 用户运行时开关 RENDER.postFx.*
      * ==================================================================== */
     _buildPost: function () {
@@ -1201,10 +1266,11 @@
       var bloomOn = !!(RENDER.bloom.enabled && RENDER.postFx.bloom);
       var vignetteOn = !!(RENDER.vignette.enabled && RENDER.postFx.vignette);
       var filmOn = !!(RENDER.filmGrain.enabled && RENDER.postFx.filmGrain);
+      var dofOn = !!(RENDER.dof && RENDER.dof.enabled && a.ShaderPass);
 
       var need = ['EffectComposer', 'RenderPass'];
       if (bloomOn) need.push('UnrealBloomPass');
-      if (vignetteOn) need.push('ShaderPass');
+      if (vignetteOn || dofOn) need.push('ShaderPass');
       if (filmOn) need.push('FilmPass');
       need.push('OutputPass');
 
@@ -1214,10 +1280,44 @@
 
       /* 重建前释放旧 composer */
       if (R.composer && R.composer.dispose) { try { R.composer.dispose(); } catch (e) {} }
-      R._bloomPass = null; R._vignettePass = null;
+      R._bloomPass = null; R._vignettePass = null; R._dofPass = null;
 
-      var composer = new a.EffectComposer(R.renderer);
+      /* 景深需要带深度纹理的渲染目标；任何不支持/异常都回退到普通链路，绝不让画面黑屏 */
+      var composer = null;
+      if (dofOn) {
+        try {
+          var depthTex = new THREE.DepthTexture(1, 1, THREE.UnsignedIntType);
+          depthTex.minFilter = THREE.NearestFilter;
+          depthTex.magFilter = THREE.NearestFilter;
+          var rt = new THREE.WebGLRenderTarget(1, 1, {
+            minFilter: THREE.LinearFilter,
+            magFilter: THREE.LinearFilter,
+            type: THREE.HalfFloatType,
+            depthBuffer: true
+          });
+          rt.depthTexture = depthTex;
+          composer = new a.EffectComposer(R.renderer, rt);
+          /* RenderPass 先画进 rt2，景深 pass 再采样 rt2 的深度纹理并写入 rt1；
+             因此深度纹理只能挂在 rt2 上，rt1 必须解绑，避免采样与写入同一纹理（反馈环）。 */
+          if (composer.renderTarget2) composer.renderTarget2.depthTexture = depthTex;
+          if (composer.renderTarget1) composer.renderTarget1.depthTexture = null;
+          var ddef = R._dofShaderDef();
+          R._dofPass = new a.ShaderPass(ddef);
+          /* ShaderPass 会克隆 uniform，纹理必须在其构造之后再绑定真实深度纹理 */
+          R._dofPass.uniforms.tDepth.value = depthTex;
+          R._dofPass.uniforms.uNear.value = CAM.near;
+          R._dofPass.uniforms.uFar.value = CAM.far;
+        } catch (err) {
+          console.warn('[Post] 景深初始化失败，已回退普通后处理链', err && err.message);
+          R._dofPass = null;
+          composer = null;
+          dofOn = false;
+        }
+      }
+      if (!composer) composer = new a.EffectComposer(R.renderer);
+
       composer.addPass(new a.RenderPass(R.scene, R.camera));
+      if (R._dofPass) composer.addPass(R._dofPass);
 
       if (bloomOn) {
         var res = new THREE.Vector2(R._size ? R._size.x : 1, R._size ? R._size.y : 1);
@@ -1284,6 +1384,8 @@
       /* 粒子 / 雨滴规模（广播给特效系统用） */
       R._particleScale = preset.particleScale != null ? preset.particleScale : 1;
       R._rainScale = preset.rainScale != null ? preset.rainScale : 1;
+      /* 雨幕与地面溅水按画质缩减（同一份 Points/网格复用，只改可见数量，不新建对象） */
+      if (R.city) R.city.rainScale = R._rainScale;
 
       /* 重建阴影设置 */
       if (R.renderer) {

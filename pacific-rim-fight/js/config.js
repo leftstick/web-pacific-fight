@@ -266,7 +266,7 @@
     near: 0.5,
     far: 1200,
     mode: 'side',             // 固定横向视角（不可自由旋转）
-    height: 8.5,              // 相机高度（降低→仰拍凸显巨型感）
+    height: 5.0,              // 相机高度（低于注视点→低角度仰拍，凸显百吨巨型压迫感）
     lookHeight: 8,            // 注视点高度（抬到机甲胸/头部）
     baseDistance: 36,         // 基准横向距离（沿 +Z 看向战场）
     minDistance: 22,
@@ -815,6 +815,9 @@
     filmGrain: { enabled: true, intensity: 0.055 },   // 极淡胶片颗粒
     fog: { enabled: true, near: 40, far: 340, density: 0.0038 },
     groundFogPass: { enabled: true, height: 7, opacity: 0.55 },
+    /* 景深：仅远景虚化（主体机甲/怪兽与镜头之间保持全清晰）
+       focusOffset 相对相机到战场平面的距离，range 为过渡纵深，maxPx 为最大虚化像素 */
+    dof: { enabled: true, focusOffset: 26, range: 150, strength: 0.55, maxPx: 3.2 },
     maxLights: { point: 6, spot: 3 },
     resolutionScale: 1.0,
 
@@ -835,7 +838,8 @@
         resolutionScale: 1.0,
         antialias: true,
         particleScale: 1.0,          // 特效粒子数量乘数
-        rainScale: 1.0
+        rainScale: 1.0,
+        dof: { enabled: true }       // 景深：仅桌面高画质开启
       },
       medium: {
         bloom: { enabled: true, strength: 0.45, radius: 0.5, threshold: 0.78 },
@@ -847,7 +851,8 @@
         resolutionScale: 0.85,
         antialias: true,
         particleScale: 0.7,
-        rainScale: 0.7
+        rainScale: 0.7,
+        dof: { enabled: false }
       },
       low: {
         bloom: { enabled: false, strength: 0.3, radius: 0.4, threshold: 0.85 },
@@ -859,7 +864,8 @@
         resolutionScale: 0.65,
         antialias: false,
         particleScale: 0.4,
-        rainScale: 0.4
+        rainScale: 0.4,
+        dof: { enabled: false }
       }
     },
 

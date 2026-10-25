@@ -438,7 +438,8 @@
       var ks = KDEF.kaijuSkin || { metalness: 0.05, roughness: 0.9 };
       var kb = KDEF.kaijuBelly || { metalness: 0.05, roughness: 0.85 };
       var kp = KDEF.kaijuPlate || { metalness: 0.35, roughness: 0.8 };
-      var skin = Models._mat(def.skin, { metalness: ks.metalness, roughness: ks.roughness, flat: true, maps: tex, normalScale: 1.25 });
+      /* 甲壳黏液微弱自发光：雨夜里皮肤缝渗出冷绿微光，不做高亮泛光 */
+      var skin = Models._mat(def.skin, { metalness: ks.metalness, roughness: ks.roughness, flat: true, maps: tex, normalScale: 1.25, emissive: 0x0d2a22, emissiveIntensity: 0.55 });
       var belly = Models._mat(def.belly, { metalness: kb.metalness, roughness: kb.roughness, flat: true, maps: tex, normalScale: 0.9 });
       var plate = Models._mat(0x2b3238, { metalness: kp.metalness, roughness: kp.roughness, flat: true, maps: tex, normalScale: 1.1 });
       var glow = Models._glowMat(def.glow, (AC.glow && AC.glow.kaijuCore) || 0.95);
@@ -1862,7 +1863,12 @@
       var rarr = this.rain.geometry.attributes.position.array;
       var rarea = this.rainArea || { x: 140, z: 120 };
       var rmax = this.rainHeightMax || 46;
-      for (i = 0; i < rarr.length; i += 3) {
+      /* 画质缩放：只更新/绘制前 N 颗雨滴（同一 buffer 复用，不重建几何体、不新建对象） */
+      var rscale = this.rainScale != null ? this.rainScale : 1;
+      var rverts = this.rain.geometry.attributes.position.count;
+      var rdraw = Math.max(3, Math.floor(rverts * rscale) * 3);
+      if (this.rain.geometry.drawRange.count !== rdraw) this.rain.geometry.drawRange.count = rdraw;
+      for (i = 0; i < rdraw; i += 3) {
         rarr[i + 1] -= dt * fall;
         rarr[i] += dt * wind;
         if (rarr[i + 1] < 0.2) {
@@ -1877,8 +1883,13 @@
     }
     /* 地面溅水点闪烁 */
     if (this.splashes) {
+      /* 溅水点数量随画质缩减（隐藏的网格不再参与绘制，省 draw call） */
+      var splScale = this.rainScale != null ? this.rainScale : 1;
+      var splOn = Math.max(10, Math.floor(this.splashes.length * splScale));
       for (i = 0; i < this.splashes.length; i++) {
         var sp = this.splashes[i];
+        if (i >= splOn) { if (sp.visible) sp.visible = false; continue; }
+        if (!sp.visible) sp.visible = true;
         sp.userData.life += dt;
         if (sp.userData.life >= sp.userData.max) {
           sp.userData.life = 0;
