@@ -166,10 +166,10 @@
       trail: {
         enabled: true,
         segments: 16,           // 拖尾段数（越大越平滑、越费顶点）
-        width: 1.6,             // 头部宽度（世界单位）
-        widthFalloff: 0.25,     // 尾部宽度 = 头部 * 该值
-        life: 0.22,             // 单段拖尾寿命（秒），决定拖尾长度
-        opacity: 0.85,
+        width: 2.2,             // 头部宽度（世界单位，加宽→等离子链锯感）
+        widthFalloff: 0.2,      // 尾部宽度 = 头部 * 该值
+        life: 0.28,             // 单段拖尾寿命（秒），决定拖尾长度
+        opacity: 0.92,
         /* 各动作拖尾色（机甲冷蓝 / 橙；怪兽青绿） */
         colorLight: 0x6fd0ff,
         colorHeavy: 0xffc86b,

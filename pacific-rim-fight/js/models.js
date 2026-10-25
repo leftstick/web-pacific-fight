@@ -1751,18 +1751,25 @@
       }
       this.embers.geometry.attributes.position.needsUpdate = true;
     }
-    /* 雷电（低频） */
+    /* 雷电（低频，双闪更真实） */
     if (ART.atmosphere.distantLightning && this._flashLight) {
       this._lightningTimer -= dt;
       if (this._lightningTimer <= 0) {
-        this._lightningTimer = U.rand(6, 16);
+        this._lightningTimer = U.rand(4.5, 12);
         this._flash = 1;
+        this._flash2 = 0;   /* 第二次闪 */
       }
       if (this._flash > 0) {
-        this._flash = Math.max(0, this._flash - dt * 2.2);
+        this._flash = Math.max(0, this._flash - dt * 2.4);
         var f = this._flash > 0.75 ? 1 : this._flash * 1.3;
-        this._flashLight.intensity = f * 2.6;
-        this._flashPlane.material.opacity = f * 0.32;
+        this._flashLight.intensity = f * 4.5;
+        this._flashPlane.material.opacity = f * 0.4;
+        /* 主闪衰减到一半时触发第二次较弱闪 */
+        if (this._flash < 0.5 && this._flash2 === 0) this._flash2 = 0.6;
+      }
+      if (this._flash2 > 0) {
+        this._flash2 = Math.max(0, this._flash2 - dt * 3.0);
+        this._flashLight.intensity = Math.max(this._flashLight.intensity, this._flash2 * 2.2);
       }
     }
     /* 可破坏建筑受击闪红（结束后还原窗户灯光自发光） */
