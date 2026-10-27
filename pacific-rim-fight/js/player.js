@@ -38,6 +38,7 @@
   var YAW_LAMBDA = 5.5;            // 朝向平滑响应（降低→巨型机体转向迟缓）
   var MASS_REF = 1000;             // 击退质量归一化基准（与 physics.js 保持一致）
   var MODEL_YAW_OFFSET = Math.PI / 2;  // 程序化模型正面为 +Z，偏移后使 yaw=0 时正面指向 +X
+  var CAMERA_FACING_BIAS = 0.34;       // 侧对镜头时向内转约 20°，露出胸口反应堆/驾驶舱（3/4 视角）
   var HIT_BACK_AMOUNT = 0.8;       // 受击“后仰”时根节点的视觉回撤量（世界单位）
 
   var MFADE = 0.16;                // 默认交叉淡入淡出时长（秒）
@@ -123,6 +124,10 @@
     this._advanceT = 0; this._advanceVX = 0; this._advanceVZ = 0;   // 起手前冲 / 突进
     this._firing = false; this._fireCount = 0;                      // 机炮连射
     this._ultIndex = 0; this._ultTimes = [];                        // 必杀多段
+    /* P0：KO 锁定 / 死亡演出时间轴 */
+    this._koLock = false;
+    this._deathT = 0; this._deathDone = false; this._deathEvents = {};
+    this.deathDuration = (C.rules && C.rules.playerDeathDuration) || 3.2;
     this._hitT = 0; this._flinchT = 0; this._hitBack = 0; this._staminaDelay = 0;
     this._exhausted = false;
     this._lastStateKey = '';
@@ -223,6 +228,23 @@
       (combat && combat.opponentOf ? combat.opponentOf(this) : null);
 
     if (this.dead) {
+      /* 死亡动画用真实时间推进（KO 慢动作只作用于战斗逻辑） */
+      var deathDt = (ctx.deathDt !== undefined) ? ctx.deathDt : dt;
+      this._integrateKnockback(deathDt);
+      this._clampArena();
+      this._advanceDeath(deathDt);
+      this._syncVisual(deathDt);
+      this._emitState();
+      return;
+    }
+
+    /* KO 后胜者冻结输入与 AI，只保留惯性 / 呼吸；
+       若击杀瞬间仍在出招，让该动作自然播完（不再产生伤害）。 */
+    if (this._koLock) {
+      if (this.moveInst) this._updateMove(dt, combat, opponent, renderer);
+      else if (this.state === 'idle') this.anim('idle', { fade: 0.18 });
+      this._integrateKnockback(dt);
+      this._clampArena();
       this._syncVisual(dt);
       this._emitState();
       return;
@@ -529,14 +551,40 @@
       }
     }
 
-    /* 必杀技：活动窗口内分 2~3 段施加伤害（每段重置命中列表） */
+    /* 必杀技：活动窗口内分 3 段施加伤害（每段重置命中列表）
+       · 前两段只削血 + 强制受击反应，不致死；
+       · 最后一段才允许击杀，并触发镜头推近与最强刀光。 */
     if (mi.key === 'ultimate' && mi.phase === 'active' && move) {
       var f = move.active > 0 ? (mi.t / move.active) : 1;
+      var rules = C.rules || {};
+      var dmgScales = rules.ultimateStageDamageScale || [0.55, 0.60, 1.85];
+      var kbScales = rules.ultimateStageKnockbackScale || [0.22, 0.26, 1.0];
       while (this._ultIndex < this._ultTimes.length && f >= this._ultTimes[this._ultIndex]) {
+        var idx = this._ultIndex;
+        var last = idx >= this._ultTimes.length - 1;
         mi.hitTargets.length = 0;                       // 允许对同一目标再次结算
         if (combat && combat.resolveAttack && opponent) {
-          combat.resolveAttack(this, [opponent], null);
+          combat.resolveAttack(this, [opponent], null, {
+            damageScale: dmgScales[idx] !== undefined ? dmgScales[idx] : 1,
+            knockbackScale: kbScales[idx] !== undefined ? kbScales[idx] : 1,
+            lethal: last,
+            cinematic: true,
+            impactLevel: last ? 3 : 2,
+            zoom: false
+          });
         }
+        if (renderer && renderer.spawnSlashArc) {
+          renderer.spawnSlashArc(this, {
+            color: last ? 0xbfe8ff : 0x6fd0ff,
+            radius: (this.def.height || 9.5) * (last ? 0.78 : 0.62),
+            startAngle: last ? -0.55 : (0.75 + idx * 0.55),
+            spin: last ? -4.4 : -3.1,
+            life: last ? 0.28 : 0.20,
+            z: 1.4
+          });
+        }
+        if (renderer && renderer.cameraShake) renderer.cameraShake(last ? 3 : 2);
+        if (last && renderer && renderer.zoomPunch) renderer.zoomPunch();
         this._ultIndex++;
       }
     }
@@ -558,9 +606,29 @@
     var move = mi.move;
     var key = mi.key;
 
-    /* P2：攻击拖尾（纯渲染层，追踪右臂；不触碰 position / 物理） */
+    /* P2：攻击拖尾（纯渲染层，追踪刀尖；不触碰 position / 物理） */
     if (renderer && renderer.startTrail) {
       renderer.startTrail(this, trailColorFor(key, 'mecha'));
+    }
+    /* P0：起手刀光弧 —— 即使判定帧未命中，也能看到挥砍轨迹 */
+    if (renderer && renderer.spawnSlashArc && this.def.weapon && this.def.weapon.type === 'blade') {
+      var h = this.def.height || 9.5;
+      if (key === 'light') {
+        renderer.spawnSlashArc(this, {
+          color: trailColorFor('light', 'mecha'),
+          radius: h * 0.55, startAngle: 0.95, spin: -3.4, life: 0.20
+        });
+      } else if (key === 'heavy') {
+        renderer.spawnSlashArc(this, {
+          color: trailColorFor('heavy', 'mecha'),
+          radius: h * 0.62, startAngle: 1.25, spin: -3.8, life: 0.26, opacity: 0.55
+        });
+      } else if (key === 'skill') {
+        renderer.spawnSlashArc(this, {
+          color: trailColorFor('skill', 'mecha'),
+          radius: h * 0.58, startAngle: 1.35, spin: 3.2, life: 0.22
+        });
+      }
     }
 
     if (key === 'light') {
@@ -834,7 +902,7 @@
 
     if (this.root) {
       this.root.position.set(this.position.x + backX, this.position.y + bobY, this.position.z);
-      this.root.rotation.y = MODEL_YAW_OFFSET - this.yaw;          // 模型正面 +Z → 对齐 yaw
+      this.root.rotation.y = MODEL_YAW_OFFSET - this.yaw - this.facing * CAMERA_FACING_BIAS;
     }
     /* 材质：受击闪白衰减 + 发光呼吸 */
     this._updateMaterials(dt);
@@ -1061,7 +1129,7 @@
     this.knockbackVel.z = vel.z;
   };
 
-  /* 死亡：切死亡片段、关闭输入与动作 */
+  /* 死亡：切死亡片段、关闭输入与动作，启动分层击毁演出 */
   Player.prototype._enterDeath = function () {
     this.dead = true;
     this.hp = 0;
@@ -1069,12 +1137,67 @@
     this.blocking = false;
     this.invuln = false;
     this.stunned = false;
+    this._koLock = true;
     this.moveInst = null;
     this._doingDodge = false;
     this._vx = 0; this._vz = 0;
     this._advanceT = 0;
+    this._deathT = 0;
+    this._deathDone = false;
+    this._deathEvents = {};
+    this.deathDuration = (C.rules && C.rules.playerDeathDuration) || 3.2;
+    if (this.renderer && this.renderer.endTrail) this.renderer.endTrail(this);
     this.anim('death', { fade: 0.1, force: true });
+    U.bus.emit('unit:dying', { unit: this });
     U.bus.emit('unit:dead', { unit: this });
+  };
+
+  /* 死亡演出时间轴：火花 → 跪地碎片 → 反应堆殉爆 → 完成事件 */
+  Player.prototype._advanceDeath = function (dt) {
+    this._deathT += Math.max(0, dt || 0);
+    var t = this._deathT;
+    var ev = this._deathEvents || (this._deathEvents = {});
+    var rd = this.renderer;
+    if (t >= 0.35 && !ev.impact) {
+      ev.impact = true;
+      if (rd && rd.spawnDeathBurst) rd.spawnDeathBurst(this, 'impact');
+    }
+    if (t >= 1.45 && !ev.fall) {
+      ev.fall = true;
+      /* 跪地冲击：主碎片 + 强震 */
+      if (rd && rd.spawnArmorDebris) rd.spawnArmorDebris(this.getHitCenter(), this);
+      if (rd && rd.cameraShake) rd.cameraShake(3);
+      if (rd && rd.spawnDeathBurst) rd.spawnDeathBurst(this, 'fall');
+    }
+    if (t >= 2.20 && !ev.reactor) {
+      ev.reactor = true;
+      if (rd && rd.spawnDeathBurst) rd.spawnDeathBurst(this, 'reactor');
+    }
+    if (!this._deathDone && t >= this.deathDuration) {
+      this._deathDone = true;
+      U.bus.emit('unit:death-complete', { unit: this });
+    }
+  };
+
+  /* KO 后胜者：停止输入/AI，清理动作与拖尾，回到待机呼吸 */
+  Player.prototype.enterKO = function () {
+    this._koLock = true;
+    if (this.dead) return;
+    var midMove = !!this.moveInst;                       // 击杀瞬间仍在出招：保留动作播完
+    this.blocking = false;
+    this.invuln = false;
+    this.stunned = false;
+    this._doingDodge = false;
+    this._vx = 0; this._vz = 0; this._speed = 0;
+    this._advanceT = 0; this._advanceVX = 0; this._advanceVZ = 0;
+    this._firing = false;
+    if (!midMove) {
+      this.moveInst = null;
+      this._ultIndex = 0; this._ultTimes = [];
+      if (this.renderer && this.renderer.endTrail) this.renderer.endTrail(this);
+      this.state = 'idle';
+      this.anim('idle', { fade: 0.18, force: true });
+    }
   };
 
   /* ===========================================================================
@@ -1133,6 +1256,9 @@
     this._firing = false; this._fireCount = 0;
     this._ultIndex = 0; this._ultTimes = [];
     this._hitT = 0; this._flinchT = 0; this._hitBack = 0; this._staminaDelay = 0;
+    this._koLock = false;
+    this._deathT = 0; this._deathDone = false; this._deathEvents = {};
+    this.deathDuration = (C.rules && C.rules.playerDeathDuration) || 3.2;
     this._leanX = 0; this._leanZ = 0; this._prevSpeed = 0; this._prevYaw = this.yaw;
     this._softReturn = 0;
     this._debrisStage = 0;

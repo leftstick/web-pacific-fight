@@ -30,6 +30,10 @@
     elapsed: 0,
     lastTime: 0,
     koTimer: 0,
+    koLoser: null,
+    koDeathDone: false,
+    koAftermathTimer: 0,
+    koFallbackTimer: 0,
     slowMo: 0,
     timers: [],
     preview: { renderer: null, scene: null, camera: null, canvas: null, angle: 0, group: null },
@@ -203,16 +207,16 @@
          1x 屏幕至少 1.5x 超采样，避免预览框小尺寸下边缘发糊 */
       pr.setPixelRatio(Math.max(1.5, Math.min(global.devicePixelRatio || 1, 2.25)));
       pr.toneMapping = THREE.ACESFilmicToneMapping;
-      pr.toneMappingExposure = 1.22;
+      pr.toneMappingExposure = 0.96;
       pr.outputColorSpace = THREE.SRGBColorSpace;
       M.preview.renderer = pr;
 
       var scene = new THREE.Scene();
       M.preview.scene = scene;
-      var cam = new THREE.PerspectiveCamera(34, 1, 0.5, 300);
-      /* 机位贴近模型并压低注视点：模型在预览框内更大更饱满，避免上半框大片空白 */
-      cam.position.set(0, 7.2, 23.5);
-      cam.lookAt(0, 4.6, 0);
+      var cam = new THREE.PerspectiveCamera(35, 1, 0.5, 300);
+      /* 机位后撤并抬高注视点：给 11m 怪兽 + 抬起的骨冠留出头顶余量 */
+      cam.position.set(0, 6.6, 22.5);
+      cam.lookAt(0, 6.1, 0);
       M.preview.camera = cam;
 
       /* IBL 环境反射：金属装甲没有环境贴图会渲染成死黑色块 */
@@ -223,7 +227,7 @@
           var room = new ad.RoomEnvironment();
           var rt = pmrem.fromScene(room, 0.03);
           scene.environment = rt.texture;
-          if ('environmentIntensity' in scene) scene.environmentIntensity = 0.9;
+          if ('environmentIntensity' in scene) scene.environmentIntensity = 0.65;
           if (room.dispose) room.dispose();
           pmrem.dispose();
           M.preview.envRT = rt;
@@ -231,16 +235,20 @@
       }
 
       /* 半球光给出上亮下暗的自然体积感（纯环境光会让模型像平涂色块） */
-      scene.add(new THREE.HemisphereLight(0x8fc4e8, 0x0a141a, 0.55));
-      scene.add(new THREE.AmbientLight(0x50606e, 0.95));
-      var key = new THREE.DirectionalLight(0xffffff, 2.9);
+      scene.add(new THREE.HemisphereLight(0x8fc4e8, 0x0a141a, 0.35));
+      scene.add(new THREE.AmbientLight(0x50606e, 0.35));
+      var key = new THREE.DirectionalLight(0xfff4e6, 1.8);
       key.position.set(-13, 24, 16);
       scene.add(key);
-      var rim = new THREE.DirectionalLight(PALAccent(), 2.2);
+      var rim = new THREE.DirectionalLight(PALAccent(), 1.4);
       rim.position.set(17, 11, -13);
       scene.add(rim);
+      /* 正面柔光：补齐镜头方向的面光，机甲不再只剩轮廓 */
+      var front = new THREE.DirectionalLight(0xffe8cf, 0.55);
+      front.position.set(6, 10, 22);
+      scene.add(front);
       /* 冷色底部补光：勾出装甲下缘，避免整体变成平面剪影 */
-      var fill = new THREE.DirectionalLight(0x6fd0ff, 0.9);
+      var fill = new THREE.DirectionalLight(0x6fd0ff, 0.45);
       fill.position.set(4, -8, 12);
       scene.add(fill);
 
@@ -265,8 +273,18 @@
       Promise.all(defs.map(function (def) {
         return GAME.Models.prepareUnit(def).then(function (p) {
           var root = p.root;
-          root.position.set(def.faction === 'kaiju' ? 6.5 : -6.5, 0, 0);
-          root.rotation.y = def.faction === 'kaiju' ? Math.PI * 0.85 : -Math.PI * 0.15;
+          /* 预览静态屈膝：待机剪辑不驱动小腿，直腿站立会显得像积木；
+             脚掌反向补偿，保持脚底贴地 */
+          if (def.faction === 'mecha') {
+            ['L', 'R'].forEach(function (side) {
+              var shin = root.getObjectByName('shin' + side);
+              var foot = root.getObjectByName('foot' + side);
+              if (shin) shin.rotation.x = 0.10;
+              if (foot) foot.rotation.x = -0.10;
+            });
+          }
+          root.position.set(def.faction === 'kaiju' ? 4.75 : -4.75, 0, 0);
+          root.rotation.y = def.faction === 'kaiju' ? -Math.PI * 0.22 : Math.PI * 0.22;
           root.visible = false;
           /* 接触阴影（水平放置，不随朝向摆动） */
           var sh = new THREE.Mesh(
@@ -347,8 +365,8 @@
         if (!M.previewModels.hasOwnProperty(id)) continue;
         var e = M.previewModels[id];
         if (!e.root.visible) continue;
-        var base = e.def.faction === 'kaiju' ? Math.PI * 0.85 : -Math.PI * 0.15;
-        e.root.rotation.y = base + Math.sin(pv.angle) * 0.55;
+        var base = e.def.faction === 'kaiju' ? -Math.PI * 0.22 : Math.PI * 0.22;
+        e.root.rotation.y = base + Math.sin(pv.angle) * 0.32;
         if (e.mixer) e.mixer.update(dt);
 
         /* 关节蒸汽：肩部/背甲缓慢排气（死亡循环复用池内 sprite） */
@@ -421,6 +439,7 @@
 
       bus.on('debug:toggle', function (e) { GAME.Renderer.setDebugHitboxes(!!e.showHitboxes); });
       bus.on('combat:ko', function (e) { Main.onKO(e); });
+      bus.on('unit:death-complete', function (e) { Main.onDeathComplete(e); });
       bus.on('combat:building-destroyed', function () { if (GAME.Audio) GAME.Audio.play('explosion'); });
 
       /* 单位事件音效 */
@@ -479,6 +498,11 @@
       M.state = 'fight';
       M.slowMo = 0;
       M.koTimer = 0;
+      M.koLoser = null;
+      M.koDeathDone = false;
+      M.koAftermathTimer = 0;
+      M.koFallbackTimer = 0;
+      if (GAME.Renderer.clearKOFocus) GAME.Renderer.clearKOFocus();
       GAME.UI.hidePause();
       GAME.UI.showScreen('fight');
       Main.roundIntro();
@@ -495,6 +519,7 @@
     },
 
     disposeUnits: function () {
+      if (GAME.Renderer.clearKOFocus) GAME.Renderer.clearKOFocus();
       if (M.player) { GAME.Renderer.removeUnit(M.player.root); M.player.dispose(); M.player = null; }
       if (M.enemy) { GAME.Renderer.removeUnit(M.enemy.root); M.enemy.dispose(); M.enemy = null; }
     },
@@ -521,15 +546,32 @@
 
     onKO: function (e) {
       if (M.state !== 'fight' && M.state !== 'pause') return;
+      var rules = C.rules || {};
       M.state = 'ko';
-      M.slowMo = 2.0;
-      if (C.rules.slowMoOnKO) M.slowMo = 2.4 + C.rules.koSlowMo;
-      M.koTimer = UI_CFG.screen.koDelay + (UI_CFG.screen.resultDelay || 1.2);
       M.koWinner = e && e.winner ? e.winner : null;
+      M.koLoser = e && e.loser ? e.loser : null;
+      M.koDeathDone = false;
+      M.koAftermathTimer = 0;
+      M.koFallbackTimer = rules.deathFallback || 8.0;
+      /* 只保留短暂慢动作；死亡动画随后按真实速度完整播完 */
+      M.slowMo = rules.koSlowMoDuration || 0.6;
+      M.koTimer = 0;
+      if (M.player && M.player.enterKO) M.player.enterKO();
+      if (M.enemy && M.enemy.enterKO) M.enemy.enterKO();
+      if (M.koLoser && GAME.Renderer.setKOFocus) GAME.Renderer.setKOFocus(M.koLoser);
+    },
+
+    onDeathComplete: function (e) {
+      if (M.state !== 'ko' || M.koDeathDone) return;
+      if (M.koLoser && e && e.unit && e.unit !== M.koLoser) return;
+      M.koDeathDone = true;
+      M.koAftermathTimer = (C.rules && C.rules.deathResultDelay) || 1.0;
     },
 
     showResult: function () {
+      if (M.state === 'result') return;
       M.state = 'result';
+      if (GAME.Renderer.clearKOFocus) GAME.Renderer.clearKOFocus();
       var victory = (M.koWinner === M.player);
       if (!M.koWinner) victory = false;
       GAME.UI.setResult({
@@ -593,6 +635,7 @@
           GAME.Physics.step(wdt);
           if (M.player && M.enemy) {
             var ctx = Main.makeCtx(wdt, dt);
+            ctx.locked = (M.state === 'ko');
             /* 每个单位须拿到「对方」作为 opponent，否则 AI 会把自身当对手 */
             ctx.opponent = M.enemy;
             M.player.update(wdt, ctx);
@@ -601,11 +644,18 @@
             /* 顿帧计时用真实 dt：若用 wdt（已被压到 0.06 倍）会让 3 帧顿帧拖成十几帧 */
             GAME.Combat.update(dt);
             GAME.UI.updateHUD({ player: M.player, enemy: M.enemy });
-            GAME.Renderer.updateCamera([M.player, M.enemy], dt);
+            var camTargets = (M.state === 'ko' && M.koLoser) ? [M.koLoser] : [M.player, M.enemy];
+            GAME.Renderer.updateCamera(camTargets, dt);
           }
           if (M.state === 'ko') {
-            M.koTimer -= dt;
-            if (M.koTimer <= 0) Main.showResult();
+            if (!M.koDeathDone) {
+              /* 兜底：死亡完成事件丢失时，到达时限后强制进入结算 */
+              M.koFallbackTimer -= dt;
+              if (M.koFallbackTimer <= 0) Main.onDeathComplete({ unit: M.koLoser, forced: true });
+            } else if (M.koAftermathTimer > 0) {
+              M.koAftermathTimer -= dt;
+              if (M.koAftermathTimer <= 0) Main.showResult();
+            }
           }
         }
       } else {
@@ -624,6 +674,8 @@
       return {
         dt: wdt,
         rawDt: rawDt,
+        deathDt: rawDt,          // 死亡动画始终按真实时间推进
+        locked: (M.state === 'ko'),
         elapsed: M.elapsed,
         timeScale: 1,
         input: GAME.Input,

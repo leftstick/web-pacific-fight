@@ -213,6 +213,23 @@
       parent.add(m);
       return m;
     },
+    /* 椭球肌肉块：怪兽躯干/四肢用它打破方盒轮廓，圆润的高光更接近生物 */
+    _ellipsoid: function (parent, rx, ry, rz, mat, x, y, z, seg) {
+      var m = new THREE.Mesh(new THREE.SphereGeometry(1, seg || 14, Math.max(8, Math.floor((seg || 14) * 0.7))), mat);
+      m.scale.set(rx, ry, rz);
+      m.position.set(x || 0, y || 0, z || 0);
+      m.castShadow = true; m.receiveShadow = true;
+      parent.add(m);
+      return m;
+    },
+    /* 胶囊肢体：圆柱 + 半球端盖，用来做连续的上臂/大腿，避免一串椭球拼成“糖葫芦” */
+    _capsule: function (parent, radius, length, mat, x, y, z, seg) {
+      var m = new THREE.Mesh(new THREE.CapsuleGeometry(radius, Math.max(0.001, length), 6, seg || 14), mat);
+      m.position.set(x || 0, y || 0, z || 0);
+      m.castShadow = true; m.receiveShadow = true;
+      parent.add(m);
+      return m;
+    },
     /* 倒角装甲板：圆角矩形沿 Z 挤出并倒角，比纯 Box 更有体积与高光层次 */
     _bevel: function (parent, w, h, d, mat, x, y, z, ry, radius) {
       var r = radius === undefined ? Math.min(w, h) * 0.14 : radius;
@@ -242,6 +259,123 @@
       return m;
     },
 
+    /* 梯形装甲板：上/下宽度独立，形成真正的斜切甲片轮廓。
+       opt = { bevel, rotX, rotY, rotZ }，厚度沿 Z 轴挤出。 */
+    _trap: function (parent, topW, botW, h, d, mat, x, y, z, opt) {
+      opt = opt || {};
+      var hwT = topW / 2, hwB = botW / 2;
+      var shape = new THREE.Shape();
+      shape.moveTo(-hwB, -h / 2);
+      shape.lineTo(hwB, -h / 2);
+      shape.lineTo(hwT, h / 2);
+      shape.lineTo(-hwT, h / 2);
+      shape.closePath();
+      var b = opt.bevel !== undefined ? opt.bevel : Math.min(topW, botW, h, d) * 0.07;
+      b = Math.max(0, Math.min(b, h * 0.18, d * 0.18));
+      var body = Math.max(0.001, d - b * 2);
+      var geo = new THREE.ExtrudeGeometry(shape, {
+        depth: body, bevelEnabled: b > 0, bevelThickness: b, bevelSize: b,
+        bevelSegments: 2, curveSegments: 1
+      });
+      geo.translate(0, 0, -body / 2);
+      var m = new THREE.Mesh(geo, mat);
+      m.position.set(x || 0, y || 0, z || 0);
+      if (opt.rotX) m.rotation.x = opt.rotX;
+      if (opt.rotY) m.rotation.y = opt.rotY;
+      if (opt.rotZ) m.rotation.z = opt.rotZ;
+      m.castShadow = true; m.receiveShadow = true;
+      parent.add(m);
+      return m;
+    },
+
+    /* 任意多边形薄板：pts = [[x,y], ...]，沿 Z 挤出。
+       用于骨冠、背鳍、刀刃等需要尖角的生物/硬表面轮廓。 */
+    _poly: function (parent, pts, d, mat, x, y, z, opt) {
+      opt = opt || {};
+      var shape = new THREE.Shape();
+      shape.moveTo(pts[0][0], pts[0][1]);
+      for (var i = 1; i < pts.length; i++) shape.lineTo(pts[i][0], pts[i][1]);
+      shape.closePath();
+      var b = opt.bevel || 0;
+      var body = Math.max(0.001, d - b * 2);
+      var geo = new THREE.ExtrudeGeometry(shape, {
+        depth: body, bevelEnabled: b > 0, bevelThickness: b, bevelSize: b,
+        bevelSegments: 2, curveSegments: 2
+      });
+      geo.translate(0, 0, -body / 2);
+      var m = new THREE.Mesh(geo, mat);
+      m.position.set(x || 0, y || 0, z || 0);
+      if (opt.rotX) m.rotation.x = opt.rotX;
+      if (opt.rotY) m.rotation.y = opt.rotY;
+      if (opt.rotZ) m.rotation.z = opt.rotZ;
+      m.castShadow = true; m.receiveShadow = true;
+      parent.add(m);
+      return m;
+    },
+
+    /* 机身编号/贴花：白灰喷漆字，只贴在朝向镜头那一面 */
+    _decalTexture: function (text) {
+      Models._decalCache = Models._decalCache || {};
+      if (Models._decalCache[text]) return Models._decalCache[text];
+      var c = document.createElement('canvas');
+      c.width = 256; c.height = 96;
+      var g = c.getContext('2d');
+      g.clearRect(0, 0, 256, 96);
+      g.fillStyle = 'rgba(226,236,240,0.92)';
+      g.font = 'bold 64px "Arial Black", Arial, sans-serif';
+      g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText(text, 128, 46);
+      g.fillStyle = 'rgba(226,236,240,0.55)';
+      g.fillRect(44, 82, 168, 5);
+      var t = new THREE.CanvasTexture(c);
+      t.colorSpace = THREE.SRGBColorSpace;
+      t.anisotropy = 4;
+      Models._decalCache[text] = t;
+      return t;
+    },
+    /* 黄黑警示条：贴在脚背/小腿，给大色块一个工业细节 */
+    _stripeTexture: function () {
+      if (Models._stripeTex) return Models._stripeTex;
+      var c = document.createElement('canvas');
+      c.width = 128; c.height = 64;
+      var g = c.getContext('2d');
+      g.fillStyle = '#1a1c1e'; g.fillRect(0, 0, 128, 64);
+      g.fillStyle = '#d9a93a';
+      for (var i = -2; i < 8; i++) {
+        g.beginPath();
+        g.moveTo(i * 24, 64); g.lineTo(i * 24 + 24, 0);
+        g.lineTo(i * 24 + 36, 0); g.lineTo(i * 24 + 12, 64);
+        g.closePath(); g.fill();
+      }
+      var t = new THREE.CanvasTexture(c);
+      t.colorSpace = THREE.SRGBColorSpace;
+      t.wrapS = THREE.RepeatWrapping;
+      t.repeat.set(2, 1);
+      Models._stripeTex = t;
+      return t;
+    },
+
+    /* 软接触阴影贴图：径向渐变，贴在单位脚下，弥补远景实时阴影不足 */
+    _shadowTexture: function () {
+      if (Models._shadowTex) return Models._shadowTex;
+      var c = document.createElement('canvas');
+      c.width = 256; c.height = 128;
+      var g = c.getContext('2d');
+      var grad = g.createRadialGradient(128, 64, 4, 128, 64, 120);
+      grad.addColorStop(0, 'rgba(0,0,0,0.9)');
+      grad.addColorStop(0.42, 'rgba(0,0,0,0.45)');
+      grad.addColorStop(0.72, 'rgba(0,0,0,0.16)');
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = grad;
+      g.fillRect(0, 0, 256, 128);
+      var t = new THREE.CanvasTexture(c);
+      t.colorSpace = THREE.SRGBColorSpace;
+      t.minFilter = THREE.LinearFilter;
+      t.magFilter = THREE.LinearFilter;
+      Models._shadowTex = t;
+      return t;
+    },
+
     /* ================================================================== */
     /* 玩家机甲（环太平洋重型机甲风格）                                     */
     /* ================================================================== */
@@ -249,7 +383,7 @@
       var H = def.height * (def.scale || 1);
       var style = def.style;
       var heavy = style === 'heavy';
-      var w = heavy ? 1.28 : 1.0;                 // 体格宽度系数
+      var w = heavy ? 1.14 : 1.0;                 // 体格宽度系数
       var tex = unitTextures('mecha');
       var MDEF = (AC.material || {});
       var mm = MDEF.mecha || { metalness: 0.62, roughness: 0.5, envMapIntensity: 1.0 };
@@ -258,161 +392,325 @@
       var armor = Models._mat(def.armor, { metalness: mm.metalness, roughness: mm.roughness, maps: tex, normalScale: 0.9, envMapIntensity: mm.envMapIntensity });
       var accent = Models._mat(def.accent, { metalness: ma.metalness, roughness: ma.roughness, maps: tex, normalScale: 0.7, envMapIntensity: ma.envMapIntensity });
       var dark = Models._mat(0x10151a, { metalness: md.metalness, roughness: md.roughness, envMapIntensity: md.envMapIntensity });
+      var steel = Models._mat(0x8d979e, { metalness: 0.9, roughness: 0.28, envMapIntensity: 1.35 });
       var glow = Models._glowMat(def.glow, (AC.glow && AC.glow.mechaCore) || 1.15);
       var glowWarm = Models._glowMat(0xffd9a0, (AC.glow && AC.glow.mechaWarm) || 0.85);
-      var glowMaterials = [glow, glowWarm];
+      var visor = Models._glowMat(0x7fe6ff, 1.05);   // 冷蓝双眼：降低过曝，保留 Jaeger 面罩的蓝光
+      var bladeGlow = Models._glowMat(0x7fe6ff, 0.45);
+      var line = Models._mat(0x1a2026, { metalness: 0.45, roughness: 0.78 });   // 面板缝/凹线
+      var stripeMat = Models._mat(0xffffff, { metalness: 0.3, roughness: 0.72, maps: { map: Models._stripeTexture() } });
+      var glowMaterials = [glow, glowWarm, visor, bladeGlow];
 
       var root = new THREE.Group();
       root.name = def.id;
+      root.scale.setScalar(1.08);                 // 撑满 9.5m 判定高度，体量不再偏小
       var parts = {};
 
-      /* --- 腿部（从髋部向下，落地于 y=0）--- */
-      var legLen = H * 0.46;
-      var thigh = legLen * 0.52, shin = legLen * 0.42;
+      /* 脚下软接触阴影：湿地面上明确“落地”，远景也不悬浮 */
+      var shadowTex = Models._shadowTexture();
+      if (shadowTex) {
+        var shadow = new THREE.Mesh(
+          new THREE.PlaneGeometry(H * 0.88, H * 0.55),
+          new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, opacity: 0.7, depthWrite: false })
+        );
+        shadow.name = 'contactShadow';
+        shadow.rotation.x = -Math.PI / 2;
+        shadow.position.y = 0.035;
+        shadow.renderOrder = 2;
+        root.add(shadow);
+      }
+
+      /* --- 腿部：梯形装甲 + 外露关节/液压，避免方形积木腿 --- */
+      var legLen = H * 0.48;
+      var thigh = legLen * 0.50, shin = legLen * 0.44;
       var parts4 = parts;
-      ['L', 'R'].forEach(function (side, i) {
-        var sx = (side === 'L' ? -1 : 1) * H * 0.085 * w;
-        var leg = Models._part('leg' + side, root, sx, H * 0.47, 0);
-        leg.rotation.z = (side === 'L' ? 1 : -1) * 0.02;
-        Models._bevel(leg, H * 0.085 * w, thigh, H * 0.09 * w, armor, 0, -thigh * 0.5, 0);   // 大腿（倒角装甲）
-        Models._box(leg, H * 0.06 * w, thigh * 0.5, H * 0.1 * w, accent, 0, -thigh * 0.2, 0); // 髋侧甲
-        /* 大腿液压杆（后侧双活塞） */
-        for (var tp = -1; tp <= 1; tp += 2) {
-          Models._cyl(leg, H * 0.009, H * 0.009, thigh * 0.6, dark, tp * H * 0.03 * w, -thigh * 0.5, -H * 0.045 * w, 6);
-          Models._cyl(leg, H * 0.013, H * 0.013, H * 0.06, accent, tp * H * 0.03 * w, -thigh * 0.82, -H * 0.045 * w, 6);
-        }
-        var knee = Models._part('shin' + side, leg, 0, -thigh, 0);
-        Models._cyl(knee, H * 0.05, H * 0.05, H * 0.06, dark, 0, 0, 0, 10);
-        Models._bevel(knee, H * 0.07 * w, shin, H * 0.075 * w, armor, 0, -shin * 0.5, 0);    // 小腿（倒角装甲）
-        Models._box(knee, H * 0.075 * w, H * 0.03, H * 0.085 * w, accent, 0, 0.01, H * 0.005); // 膝甲
-        /* 小腿液压杆（后侧双活塞，体现机甲机械结构） */
-        for (var lp = -1; lp <= 1; lp += 2) {
-          Models._cyl(knee, H * 0.008, H * 0.008, shin * 0.7, dark, lp * H * 0.025 * w, -shin * 0.4, -H * 0.04 * w, 6);
-          Models._cyl(knee, H * 0.012, H * 0.012, H * 0.05, accent, lp * H * 0.025 * w, -shin * 0.78, -H * 0.04 * w, 6);
-        }
-        var foot = Models._part('foot' + side, knee, 0, -shin, 0);
-        Models._box(foot, H * 0.1 * w, H * 0.04, H * 0.14 * w, dark, 0, H * 0.02, H * 0.02);
-        Models._box(foot, H * 0.105 * w, H * 0.02, H * 0.05, glowWarm, 0, H * 0.04, H * 0.07); // 足部灯带
-      });
-
-      /* --- 髋 --- */
-      var hip = Models._part('hip', root, 0, H * 0.47, 0);
-      Models._box(hip, H * 0.16 * w, H * 0.06, H * 0.1 * w, armor, 0, H * 0.01, 0);
-      Models._box(hip, H * 0.19 * w, H * 0.1, H * 0.11 * w, accent, 0, H * 0.06, 0);
-
-      /* --- 躯干 --- */
-      var body = Models._part('body', root, 0, H * 0.53, 0);
-      parts4.torso = body;
-      Models._box(body, H * 0.15 * w, H * 0.08, H * 0.1 * w, armor, 0, -H * 0.015, 0);        // 腰腹
-      Models._bevel(body, H * 0.21 * w, H * 0.19, H * 0.135 * w, armor, 0, H * 0.1, 0);       // 胸腔（倒角装甲）
-      Models._bevel(body, H * 0.235 * w, H * 0.045, H * 0.145 * w, accent, 0, H * 0.20, 0);   // 肩桥（倒角装甲）
-      Models._box(body, H * 0.09 * w, H * 0.16, H * 0.02, dark, 0, H * 0.1, H * 0.072 * w);    // 胸口面板
-      /* 胸口反应堆（自发光核心）—— 环太平洋标志性核反应堆，加大并加多层环 */
-      var core = Models._part('reactor', body, 0, H * 0.115, H * 0.055 * w);
-      /* 外环装甲圈 */
-      Models._cyl(core, H * 0.09, H * 0.09, H * 0.018, dark, 0, 0, -H * 0.005, 24).rotation.x = Math.PI / 2;
-      /* 中环（金属） */
-      Models._cyl(core, H * 0.072, H * 0.072, H * 0.02, accent, 0, 0, 0.002, 24).rotation.x = Math.PI / 2;
-      /* 内环（发光） */
-      Models._cyl(core, H * 0.05, H * 0.05, H * 0.03, glow, 0, 0, H * 0.012, 20).rotation.x = Math.PI / 2;
-      /* 最亮核心点 */
-      Models._cyl(core, H * 0.024, H * 0.024, H * 0.02, Models._glowMat(0xffffff, 3.2), 0, 0, H * 0.026, 12).rotation.x = Math.PI / 2;
-      /* 胸侧冷却管（左右各一根，从肩部连向反应堆） */
-      for (var cp = -1; cp <= 1; cp += 2) {
-        Models._cyl(body, H * 0.012, H * 0.012, H * 0.16, dark, cp * H * 0.1 * w, H * 0.13, H * 0.03 * w, 8).rotation.z = cp * 0.35;
-        Models._box(body, H * 0.018, H * 0.04, H * 0.03, accent, cp * H * 0.115 * w, H * 0.05, H * 0.04 * w);
-      }
-      /* 背部散热口 + 背包 */
-      Models._box(body, H * 0.17 * w, H * 0.15, H * 0.08, dark, 0, H * 0.11, -H * 0.09 * w);
-      for (var v = -1; v <= 1; v += 2) {
-        Models._box(body, H * 0.03, H * 0.11, H * 0.03, glow, v * H * 0.055 * w, H * 0.13, -H * 0.135 * w);
-      }
-      /* 腰侧装甲裙板 */
-      for (var k = -1; k <= 1; k += 2) {
-        Models._box(body, H * 0.05 * w, H * 0.09, H * 0.05, accent, k * H * 0.115 * w, -H * 0.01, 0);
-      }
-
-      /* --- 头部（Conn-Pod 驾驶舱：宽面罩 + 天线/脊冠，环太平洋标志性设计）--- */
-      var head = Models._part('head', body, 0, H * 0.245, 0);
-      if (heavy) {
-        /* 重击型：宽扁盒状驾驶舱（切尔诺·阿尔法风格），单条宽面罩 */
-        Models._box(head, H * 0.12, H * 0.08, H * 0.12, armor, 0, 0, 0);
-        Models._box(head, H * 0.125, H * 0.03, H * 0.125, accent, 0, H * 0.03, 0);        // 顶盖
-        Models._box(head, H * 0.11, H * 0.014, H * 0.018, glow, 0, -H * 0.005, H * 0.062); // 宽面罩发光条
-        Models._box(head, H * 0.018, H * 0.04, H * 0.018, dark, -H * 0.05, H * 0.04, 0);  // 左侧通讯柱
-        Models._box(head, H * 0.018, H * 0.04, H * 0.018, dark, H * 0.05, H * 0.04, 0);   // 右侧通讯柱
-        /* 顶部圆柱状反应堆排热口 */
-        Models._cyl(head, H * 0.03, H * 0.03, H * 0.03, dark, 0, H * 0.06, 0, 10);
-      } else {
-        /* 均衡型：流线型驾驶舱，带 V 型脊冠 + 双天线（赤红风暴/吉普赛风格） */
-        Models._box(head, H * 0.085, H * 0.07, H * 0.1, armor, 0, 0, 0);
-        Models._box(head, H * 0.075, H * 0.02, H * 0.03, accent, 0, H * 0.045, H * 0.005); // 脊冠基座
-        Models._box(head, H * 0.012, H * 0.035, H * 0.012, accent, 0, H * 0.07, 0);        // 中央天线
-        Models._box(head, H * 0.01, H * 0.025, H * 0.01, dark, -H * 0.035, H * 0.055, 0);  // 左天线
-        Models._box(head, H * 0.01, H * 0.025, H * 0.01, dark, H * 0.035, H * 0.055, 0);   // 右天线
-        Models._box(head, H * 0.09, H * 0.012, H * 0.02, glow, 0, H * 0.004, H * 0.05);    // 面罩发光条
-        Models._box(head, H * 0.03, H * 0.04, H * 0.02, dark, 0, -H * 0.03, H * 0.045);    // 下颚
-      }
-
-      /* --- 双臂 + 武器 --- */
       ['L', 'R'].forEach(function (side) {
         var sgn = (side === 'L' ? -1 : 1);
-        var shW = heavy ? H * 0.115 : H * 0.085;
-        var shoulder = Models._part('shoulder' + side, body, sgn * H * 0.13 * w, H * 0.175, 0);
-        Models._box(shoulder, shW, H * 0.055, H * 0.11 * w, accent, sgn * H * 0.01, 0, 0);
-        Models._bevel(shoulder, shW * 0.75, H * 0.09, H * 0.1 * w, armor, sgn * H * 0.015, -H * 0.02, 0);  // 肩甲（倒角装甲）
-        Models._box(shoulder, H * 0.02, H * 0.02, H * 0.02, glow, sgn * H * 0.045, 0.005, 0);           // 肩灯
-        /* 大型肩甲外板（Tasset，向外下延伸，环太平洋标志性宽肩轮廓） */
-        Models._bevel(shoulder, shW * 0.9, H * 0.12, H * 0.13 * w, accent, sgn * H * 0.05, -H * 0.04, -H * 0.01 * w);
-        Models._box(shoulder, shW * 0.5, H * 0.025, H * 0.04, glow, sgn * H * 0.06, -H * 0.08, -H * 0.04 * w); // 肩甲灯带
-        var arm = Models._part('arm' + side, shoulder, 0, -H * 0.03, 0);
-        Models._cyl(arm, H * 0.035, H * 0.032, H * 0.19, armor, 0, -H * 0.095, 0, 10);   // 上臂
-        Models._cyl(arm, H * 0.02, H * 0.02, H * 0.03, dark, 0, -H * 0.19, 0, 8);        // 肘关节
-        var fore = Models._part('forearm' + side, arm, 0, -H * 0.185, 0);
-        Models._cyl(fore, H * 0.042, H * 0.038, H * 0.17, armor, 0, -H * 0.085, 0, 10);  // 前臂
-        Models._box(fore, H * 0.07, H * 0.1, H * 0.07, accent, 0, -H * 0.14, 0);          // 护腕
-        Models._box(fore, H * 0.015, H * 0.015, H * 0.05, glow, 0, -H * 0.145, H * 0.04);
-        var fist = Models._part('fist' + side, fore, 0, -H * 0.175, 0);
-        Models._box(fist, H * 0.07, H * 0.06, H * 0.07, dark, 0, -H * 0.03, 0);
-        /* 武器：右臂主武器，左臂副武器（重击型换重拳/重炮） */
-        if (side === 'R') {
+        var leg = Models._part('leg' + side, root, sgn * H * 0.118 * w, H * 0.47, 0);
+        /* 髋球与轴 */
+        Models._cyl(leg, H * 0.056 * w, H * 0.05 * w, H * 0.06, dark, 0, 0, 0, 14).rotation.z = Math.PI / 2;
+        Models._cyl(leg, H * 0.012, H * 0.012, H * 0.075, steel, sgn * H * 0.052 * w, 0, 0, 8).rotation.z = Math.PI / 2;
+        /* 大腿内构 + 主甲（上宽下窄） */
+        Models._cyl(leg, H * 0.042 * w, H * 0.036 * w, thigh * 0.92, dark, 0, -thigh * 0.5, 0, 12);
+        Models._trap(leg, H * 0.148 * w, H * 0.112 * w, thigh * 0.92, H * 0.155 * w, armor, 0, -thigh * 0.5, 0, { bevel: H * 0.009 });
+        /* 正面红色甲片：带一点前倾，侧视有层次 */
+        Models._trap(leg, H * 0.092 * w, H * 0.072 * w, thigh * 0.60, H * 0.034 * w, accent, 0, -thigh * 0.38, H * 0.087 * w, { bevel: H * 0.004, rotX: -0.05 });
+        /* 外侧甲片 + 内侧小甲 */
+        Models._trap(leg, H * 0.052 * w, H * 0.040 * w, thigh * 0.58, H * 0.09 * w, armor, sgn * H * 0.060 * w, -thigh * 0.54, 0, { bevel: H * 0.004 });
+        Models._bevel(leg, H * 0.032 * w, thigh * 0.34, H * 0.055 * w, accent, -sgn * H * 0.052 * w, -thigh * 0.7, -H * 0.02, 0, H * 0.003);
+        /* 后侧双液压 */
+        for (var tp = -1; tp <= 1; tp += 2) {
+          Models._cyl(leg, H * 0.009, H * 0.009, thigh * 0.66, steel, tp * H * 0.03 * w, -thigh * 0.48, -H * 0.062 * w, 6);
+          Models._cyl(leg, H * 0.015, H * 0.015, H * 0.06, dark, tp * H * 0.03 * w, -thigh * 0.78, -H * 0.062 * w, 8);
+        }
+        /* 面板缝 */
+        Models._box(leg, H * 0.005, thigh * 0.46, H * 0.007, line, sgn * H * 0.046 * w, -thigh * 0.52, H * 0.079 * w);
+        Models._box(leg, H * 0.082 * w, H * 0.006, H * 0.007, line, 0, -thigh * 0.22, H * 0.08 * w);
+
+        /* --- 膝关节与小腿 --- */
+        var knee = Models._part('shin' + side, leg, 0, -thigh, 0);
+        Models._cyl(knee, H * 0.054 * w, H * 0.054 * w, H * 0.085, dark, 0, 0, 0, 16).rotation.z = Math.PI / 2;
+        Models._cyl(knee, H * 0.026, H * 0.026, H * 0.095, steel, sgn * H * 0.048 * w, 0, 0, 10).rotation.z = Math.PI / 2;
+        /* 小腿主甲 */
+        Models._trap(knee, H * 0.125 * w, H * 0.088 * w, shin * 0.94, H * 0.14 * w, armor, 0, -shin * 0.5, 0, { bevel: H * 0.008 });
+        /* 膝甲：向前上方翘起 */
+        Models._trap(knee, H * 0.092 * w, H * 0.112 * w, H * 0.082, H * 0.052, accent, 0, H * 0.004, H * 0.082 * w, { bevel: H * 0.005, rotX: 0.16 });
+        /* 迎面甲 */
+        Models._trap(knee, H * 0.086 * w, H * 0.066 * w, shin * 0.54, H * 0.032 * w, accent, 0, -shin * 0.3, H * 0.077 * w, { bevel: H * 0.004 });
+        /* 外侧鳍片 */
+        Models._trap(knee, H * 0.042 * w, H * 0.028 * w, shin * 0.42, H * 0.07 * w, accent, sgn * H * 0.054 * w, -shin * 0.5, -H * 0.012, { bevel: H * 0.003, rotZ: sgn * 0.1 });
+        /* 后侧液压 + 膝灯 */
+        for (var lp = -1; lp <= 1; lp += 2) {
+          Models._cyl(knee, H * 0.009, H * 0.009, shin * 0.72, steel, lp * H * 0.026 * w, -shin * 0.45, -H * 0.085 * w, 6);
+        }
+        Models._box(knee, H * 0.004, shin * 0.38, H * 0.006, line, -sgn * H * 0.04 * w, -shin * 0.46, H * 0.073 * w);
+        Models._box(knee, H * 0.032, H * 0.012, H * 0.012, glow, 0, -H * 0.004, H * 0.108 * w);
+
+        /* --- 脚：宽靴形，前脚掌分趾 --- */
+        var foot = Models._part('foot' + side, knee, 0, -shin, 0);
+        Models._cyl(foot, H * 0.036, H * 0.036, H * 0.065, dark, 0, 0, 0, 14).rotation.z = Math.PI / 2;
+        Models._trap(foot, H * 0.112 * w, H * 0.168 * w, H * 0.062, H * 0.235 * w, armor, 0, H * 0.032, H * 0.048, { bevel: H * 0.006 });
+        Models._trap(foot, H * 0.088 * w, H * 0.12 * w, H * 0.036, H * 0.10 * w, accent, 0, H * 0.073, H * 0.024, { bevel: H * 0.004 });
+        Models._box(foot, H * 0.10 * w, H * 0.052, H * 0.055, dark, 0, H * 0.03, -H * 0.078);
+        for (var tt = -1; tt <= 1; tt++) {
+          Models._box(foot, H * 0.042 * w, H * 0.032, H * 0.075, dark, tt * H * 0.05 * w, H * 0.022, H * 0.155 * w);
+          Models._box(foot, H * 0.036 * w, H * 0.014, H * 0.05, steel, tt * H * 0.05 * w, H * 0.041, H * 0.172 * w);
+        }
+        Models._box(foot, H * 0.072 * w, H * 0.012, H * 0.02, glowWarm, 0, H * 0.064, H * 0.105 * w);
+        Models._box(foot, H * 0.06 * w, H * 0.02, H * 0.006, stripeMat, 0, H * 0.05, -H * 0.108);
+      });
+
+      /* --- 髋 / 骨盆：窄腰 + 外翻裙甲，和宽胸形成倒三角 --- */
+      var hip = Models._part('hip', root, 0, H * 0.47, 0);
+      Models._cyl(hip, H * 0.072 * w, H * 0.08 * w, H * 0.075, dark, 0, H * 0.022, 0, 14);
+      Models._trap(hip, H * 0.192 * w, H * 0.142 * w, H * 0.088, H * 0.145 * w, armor, 0, -H * 0.012, 0, { bevel: H * 0.007 });
+      Models._trap(hip, H * 0.072 * w, H * 0.052 * w, H * 0.10, H * 0.05, accent, 0, -H * 0.042, H * 0.062 * w, { bevel: H * 0.004 });
+      for (var k = -1; k <= 1; k += 2) {
+        Models._trap(hip, H * 0.055 * w, H * 0.082 * w, H * 0.155, H * 0.06, accent,
+          k * H * 0.112 * w, -H * 0.05, H * 0.012, { bevel: H * 0.004, rotZ: k * 0.22 });
+        Models._box(hip, H * 0.018, H * 0.042, H * 0.04, glow, k * H * 0.152 * w, -H * 0.05, H * 0.032);
+        Models._bevel(hip, H * 0.04 * w, H * 0.075, H * 0.03, dark, k * H * 0.075 * w, -H * 0.025, -H * 0.062);
+      }
+      Models._trap(hip, H * 0.125 * w, H * 0.095 * w, H * 0.10, H * 0.05, dark, 0, -H * 0.036, -H * 0.082 * w, { rotX: -0.16 });
+      Models._box(hip, H * 0.15 * w, H * 0.012, H * 0.02, glow, 0, -H * 0.076, H * 0.058 * w);
+
+      /* --- 躯干：倒三角胸腔 + 分层腹甲 + 前凸反应堆 --- */
+      var body = Models._part('body', root, 0, H * 0.55, 0);
+      parts4.torso = body;
+      /* 腰腹：裸露机械 + 三段腹甲 */
+      Models._cyl(body, H * 0.062 * w, H * 0.078 * w, H * 0.09, dark, 0, -H * 0.02, 0, 14);
+      for (var ab = 0; ab < 3; ab++) {
+        Models._box(body, H * (0.135 + ab * 0.016) * w, H * 0.024, H * 0.055, ab === 1 ? accent : armor,
+          0, -H * 0.004 + ab * H * 0.026, H * 0.058 * w);
+      }
+      Models._box(body, H * 0.145 * w, H * 0.012, H * 0.026, glowWarm, 0, H * 0.006, H * 0.088 * w);
+      /* 胸腔：上宽下窄的倒三角 */
+      Models._trap(body, H * 0.315 * w, H * 0.195 * w, H * 0.20, H * 0.185 * w, accent, 0, H * 0.14, 0, { bevel: H * 0.011 });
+      /* 锁骨/肩桥：压窄并改深色内构，避免一条横贯胸口的灰色“货架” */
+      Models._trap(body, H * 0.30 * w, H * 0.195 * w, H * 0.05, H * 0.17 * w, dark, 0, H * 0.215, 0, { bevel: H * 0.006 });
+      /* 左右胸甲 + 进气格栅 + 侧肋：主体用红色，灰色只做窄镶边 */
+      for (var cp = -1; cp <= 1; cp += 2) {
+        Models._trap(body, H * 0.098 * w, H * 0.080 * w, H * 0.112, H * 0.035, accent,
+          cp * H * 0.083 * w, H * 0.155, H * 0.098 * w, { bevel: H * 0.004, rotZ: cp * -0.1 });
+        Models._trap(body, H * 0.048 * w, H * 0.036 * w, H * 0.072, H * 0.018, armor,
+          cp * H * 0.075 * w, H * 0.166, H * 0.115 * w, { bevel: H * 0.002, rotZ: cp * -0.08 });
+        for (var vs = 0; vs < 3; vs++) {
+          Models._box(body, H * 0.045 * w, H * 0.007, H * 0.012, glow,
+            cp * H * 0.083 * w, H * 0.112 + vs * H * 0.018, H * 0.12 * w);
+        }
+        Models._trap(body, H * 0.058 * w, H * 0.042 * w, H * 0.15, H * 0.065, accent,
+          cp * H * 0.152 * w, H * 0.145, -H * 0.01, { bevel: H * 0.004, rotZ: cp * 0.1 });
+        Models._box(body, H * 0.008, H * 0.11, H * 0.008, line, cp * H * 0.162 * w, H * 0.14, H * 0.045 * w);
+        /* 肩窝 */
+        Models._cyl(body, H * 0.06 * w, H * 0.06 * w, H * 0.075, dark, cp * H * 0.16 * w, H * 0.192, 0, 14).rotation.z = Math.PI / 2;
+      }
+      /* 中胸：深色反应堆基座 + 装甲圈 */
+      Models._trap(body, H * 0.075 * w, H * 0.055 * w, H * 0.09, H * 0.028, dark, 0, H * 0.048, H * 0.093 * w, { bevel: H * 0.003 });
+      var core = Models._part('reactor', body, 0, H * 0.145, H * 0.108 * w);
+      Models._cyl(core, H * 0.096 * w, H * 0.108 * w, H * 0.032, dark, 0, 0, 0, 10).rotation.x = Math.PI / 2;
+      Models._cyl(core, H * 0.078 * w, H * 0.086 * w, H * 0.022, steel, 0, 0, H * 0.012, 24).rotation.x = Math.PI / 2;
+      Models._cyl(core, H * 0.058 * w, H * 0.064 * w, H * 0.02, accent, 0, 0, H * 0.024, 20).rotation.x = Math.PI / 2;
+      Models._cyl(core, H * 0.036 * w, H * 0.036 * w, H * 0.016, Models._glowMat(0x77dcff, 0.75), 0, 0, H * 0.035, 20).rotation.x = Math.PI / 2;
+      Models._cyl(core, H * 0.015 * w, H * 0.015 * w, H * 0.012, Models._glowMat(0xcaf5ff, 0.55), 0, 0, H * 0.043, 14).rotation.x = Math.PI / 2;
+      /* 反应堆辐条：把白色光球拆成可读的机械环 */
+      for (var rs = 0; rs < 6; rs++) {
+        var ra = rs / 6 * Math.PI * 2 + 0.26;
+        var spoke = Models._box(core, H * 0.010, H * 0.044, H * 0.01, steel,
+          Math.cos(ra) * H * 0.046, Math.sin(ra) * H * 0.046, H * 0.03);
+        spoke.rotation.z = ra - Math.PI / 2;
+      }
+      /* 背部动力包 + 双排散热口 */
+      Models._box(body, H * 0.245 * w, H * 0.19, H * 0.09, dark, 0, H * 0.14, -H * 0.115 * w);
+      Models._trap(body, H * 0.26 * w, H * 0.22 * w, H * 0.045, H * 0.10, accent, 0, H * 0.238, -H * 0.10 * w, { bevel: H * 0.004 });
+      for (var v = -1; v <= 1; v += 2) {
+        Models._cyl(body, H * 0.028, H * 0.032, H * 0.075, steel, v * H * 0.08 * w, H * 0.265, -H * 0.11 * w, 10);
+        Models._box(body, H * 0.03, H * 0.13, H * 0.02, glow, v * H * 0.065 * w, H * 0.145, -H * 0.162 * w);
+        Models._box(body, H * 0.065 * w, H * 0.03, H * 0.04, accent, v * H * 0.10 * w, H * 0.09, -H * 0.14 * w);
+      }
+      Models._trap(body, H * 0.02, H * 0.05, H * 0.16, H * 0.05, dark, 0, H * 0.25, -H * 0.15 * w);
+
+      /* --- 头部（Conn-Pod 驾驶舱：宽面罩 + 天线/脊冠）--- */
+      Models._cyl(body, H * 0.046, H * 0.056, H * 0.085, dark, 0, H * 0.285, 0, 10);
+      Models._trap(body, H * 0.135 * w, H * 0.115 * w, H * 0.036, H * 0.115 * w, armor, 0, H * 0.316, 0, { bevel: H * 0.003 });
+      var head = Models._part('head', body, 0, H * 0.35, H * 0.006);
+      if (heavy) {
+        /* 重击型：宽扁驾驶舱，单条宽面罩 */
+        Models._trap(head, H * 0.12, H * 0.148, H * 0.095, H * 0.155, armor, 0, 0, 0, { bevel: H * 0.006 });
+        Models._trap(head, H * 0.148, H * 0.13, H * 0.04, H * 0.14, accent, 0, H * 0.062, 0, { bevel: H * 0.004 });
+        /* 双眼式面罩：中间留深色分隔，读作 Jaeger 的双眼而不是一条白色灯带 */
+        for (var he = -1; he <= 1; he += 2) {
+          var hEye = Models._box(head, H * 0.050, H * 0.019, H * 0.018, visor, he * H * 0.036, H * 0.004, H * 0.080);
+          hEye.rotation.z = -he * 0.12;
+        }
+        Models._box(head, H * 0.012, H * 0.018, H * 0.022, dark, 0, H * 0.004, H * 0.083);
+        Models._box(head, H * 0.142, H * 0.014, H * 0.03, steel, 0, H * 0.028, H * 0.077);
+        Models._box(head, H * 0.052, H * 0.026, H * 0.04, dark, 0, -H * 0.044, H * 0.052);
+        for (var hc = -1; hc <= 1; hc += 2) {
+          Models._box(head, H * 0.028, H * 0.062, H * 0.03, dark, hc * H * 0.062, H * 0.042, 0);
+          Models._box(head, H * 0.012, H * 0.035, H * 0.012, glowWarm, hc * H * 0.05, 0.0, H * 0.076);
+          Models._cyl(head, H * 0.018, H * 0.018, H * 0.03, steel, hc * H * 0.04, H * 0.09, -H * 0.01, 8);
+        }
+      } else {
+        /* 均衡型：流线驾驶舱 + V 型脊冠 + 双天线 */
+        Models._trap(head, H * 0.105, H * 0.132, H * 0.098, H * 0.14, armor, 0, 0, 0, { bevel: H * 0.006 });
+        Models._trap(head, H * 0.092, H * 0.12, H * 0.045, H * 0.135, accent, 0, H * 0.06, -0.002, { bevel: H * 0.004 });
+        for (var me = -1; me <= 1; me += 2) {
+          var mEye = Models._box(head, H * 0.048, H * 0.020, H * 0.018, visor, me * H * 0.032, H * 0.003, H * 0.076);
+          mEye.rotation.z = -me * 0.14;
+        }
+        Models._box(head, H * 0.010, H * 0.018, H * 0.022, dark, 0, H * 0.003, H * 0.079);
+        Models._box(head, H * 0.118, H * 0.012, H * 0.02, steel, 0, H * 0.023, H * 0.073);
+        Models._box(head, H * 0.10, H * 0.012, H * 0.023, dark, 0, -H * 0.026, H * 0.074);
+        Models._box(head, H * 0.042, H * 0.045, H * 0.025, dark, 0, -H * 0.048, H * 0.06);
+        Models._box(head, H * 0.012, H * 0.072, H * 0.014, accent, 0, H * 0.105, -H * 0.006);
+        Models._box(head, H * 0.009, H * 0.04, H * 0.01, dark, -H * 0.042, H * 0.07, 0);
+        Models._box(head, H * 0.009, H * 0.04, H * 0.01, dark, H * 0.042, H * 0.07, 0);
+        Models._box(head, H * 0.01, H * 0.026, H * 0.014, glowWarm, -H * 0.05, 0.004, H * 0.068);
+        Models._box(head, H * 0.01, H * 0.026, H * 0.014, glowWarm, H * 0.05, 0.004, H * 0.068);
+      }
+
+      /* --- 双臂 + 武器：宽肩重甲轮廓 --- */
+      ['L', 'R'].forEach(function (side) {
+        var sgn = (side === 'L' ? -1 : 1);
+        var shoulder = Models._part('shoulder' + side, body, sgn * H * 0.172 * w, H * 0.195, 0);
+        var ball = Models._cyl(shoulder, H * 0.055 * w, H * 0.055 * w, H * 0.085, dark, 0, 0, 0, 14);
+        ball.rotation.z = Math.PI / 2;
+        /* 主肩甲：外沿下压、上缘高过肩轴 */
+        Models._trap(shoulder, (heavy ? 0.155 : 0.125) * H, (heavy ? 0.175 : 0.15) * H, H * 0.115, H * 0.175 * w, accent,
+          sgn * H * 0.018, H * 0.028, 0, { bevel: H * 0.008, rotZ: sgn * -0.12 });
+        /* 顶层甲：更窄、更斜，读作机械肩盖而不是平置货架 */
+        Models._trap(shoulder, (heavy ? 0.085 : 0.072) * H, (heavy ? 0.12 : 0.10) * H, H * 0.05, H * 0.135 * w, steel,
+          sgn * H * 0.002, H * 0.078, -H * 0.004, { bevel: H * 0.004, rotZ: sgn * -0.30 });
+        /* 外翻副甲 */
+        Models._trap(shoulder, (heavy ? 0.07 : 0.055) * H, (heavy ? 0.05 : 0.04) * H, H * 0.14, H * 0.15 * w, accent,
+          sgn * H * 0.10 * w, -H * 0.015, 0, { bevel: H * 0.004, rotZ: sgn * 0.22 });
+        /* 正面小甲 + 灯 + 编号 */
+        Models._trap(shoulder, H * 0.075, H * 0.06, H * 0.062, H * 0.02, armor, sgn * H * 0.012, H * 0.004, H * 0.094 * w, { bevel: H * 0.002 });
+        Models._box(shoulder, H * 0.055, H * 0.01, H * 0.01, glow, sgn * H * 0.012, -H * 0.03, H * 0.1 * w);
+        var dm = new THREE.MeshBasicMaterial({
+          map: Models._decalTexture(side === 'L' ? (heavy ? 'CH-07' : 'GX-05') : '05'),
+          transparent: true, depthWrite: false, opacity: 0.72
+        });
+        var decal = new THREE.Mesh(new THREE.PlaneGeometry(H * 0.07, H * 0.026), dm);
+        decal.position.set(sgn * H * 0.012, H * 0.008, H * 0.105 * w);
+        decal.renderOrder = 2;
+        shoulder.add(decal);
+        Models._box(shoulder, H * 0.008, H * 0.06, H * 0.02, line, sgn * H * 0.06, H * 0.02, H * 0.085 * w);
+
+        var arm = Models._part('arm' + side, shoulder, 0, -H * 0.06, 0);
+        /* 上臂：深色内构 + 红色外甲 */
+        Models._cyl(arm, H * 0.05 * w, H * 0.042 * w, H * 0.20, dark, 0, -H * 0.1, 0, 12);
+        Models._trap(arm, H * 0.078, H * 0.065, H * 0.15, H * 0.09, accent, 0, -H * 0.095, 0, { bevel: H * 0.004 });
+        Models._trap(arm, H * 0.056, H * 0.048, H * 0.09, H * 0.03, armor, 0, -H * 0.145, H * 0.055, { bevel: H * 0.002 });
+        Models._cyl(arm, H * 0.022, H * 0.022, H * 0.05, steel, 0, -H * 0.2, 0, 10);
+        Models._cyl(arm, H * 0.008, H * 0.008, H * 0.14, steel, sgn * H * 0.05, -H * 0.1, -H * 0.02, 6);
+
+        var fore = Models._part('forearm' + side, arm, 0, -H * 0.205, 0);
+        Models._cyl(fore, H * 0.05, H * 0.05, H * 0.07, dark, 0, H * 0.005, 0, 14).rotation.z = Math.PI / 2;
+        /* 前臂：向手腕外扩的重装护手 */
+        Models._cyl(fore, H * 0.042, H * 0.036, H * 0.19, dark, 0, -H * 0.09, 0, 12);
+        Models._trap(fore, H * 0.118 * w, H * 0.148 * w, H * 0.185, H * 0.145 * w, armor, 0, -H * 0.09, 0, { bevel: H * 0.007 });
+        Models._trap(fore, H * 0.092 * w, H * 0.112 * w, H * 0.12, H * 0.04, accent, 0, -H * 0.085, H * 0.078 * w, { bevel: H * 0.004 });
+        Models._box(fore, H * 0.012, H * 0.10, H * 0.02, glow, sgn * H * 0.06 * w, -H * 0.09, H * 0.05);
+        Models._box(fore, H * 0.085 * w, H * 0.018, H * 0.045, steel, 0, 0, H * 0.045);
+        Models._cyl(fore, H * 0.007, H * 0.007, H * 0.14, steel, -sgn * H * 0.055 * w, -H * 0.10, -H * 0.05, 6);
+        Models._box(fore, H * 0.004, H * 0.1, H * 0.006, line, sgn * H * 0.045 * w, -H * 0.09, H * 0.078 * w);
+
+        var fist = Models._part('fist' + side, fore, 0, -H * 0.19, 0);
+        Models._bevel(fist, H * 0.11 * w, H * 0.085, H * 0.115 * w, dark, 0, -H * 0.02, 0);
+        Models._trap(fist, H * 0.10 * w, H * 0.095 * w, H * 0.04, H * 0.12 * w, accent, 0, -H * 0.04, 0, { bevel: H * 0.004 });
+        for (var ff = -1; ff <= 1; ff++) {
+          Models._box(fist, H * 0.028 * w, H * 0.03, H * 0.045, steel, ff * H * 0.032 * w, -H * 0.065, H * 0.04);
+        }
+        /* 武器：右臂主武器；均衡型双腕同款链锯，近侧手臂也能看到刀锋 */
+        if (side === 'R' || (side === 'L' && def.weapon.type === 'blade')) {
           if (def.weapon.type === 'blade') {
-            /* 等离子链锯：腕部旋转圆盘 + 带锯齿的能量刃 */
-            var hub = Models._cyl(fore, H * 0.05, H * 0.05, H * 0.02, dark, 0, -H * 0.17, H * 0.05, 16);
+            /* 等离子链锯：腕部圆盘 + 有厚度的锥形刀身 + 外缘锯齿光，
+               不再用一根通体发光的方条，近看能读出“机械刀”而不是“光剑” */
+            var hub = Models._cyl(fore, H * 0.06, H * 0.06, H * 0.025, dark, 0, -H * 0.135, H * 0.055, 18);
             hub.rotation.x = Math.PI / 2;
-            var disc = new THREE.Mesh(new THREE.CylinderGeometry(H * 0.075, H * 0.075, H * 0.012, 16), Models._mat(0xb9c4cc, { metalness: 1, roughness: 0.2 }));
-            disc.position.set(0, -H * 0.17, H * 0.055); disc.rotation.x = Math.PI / 2; disc.castShadow = true;
+            var disc = new THREE.Mesh(new THREE.CylinderGeometry(H * 0.078, H * 0.078, H * 0.014, 20), steel);
+            disc.position.set(0, -H * 0.135, H * 0.06); disc.rotation.x = Math.PI / 2; disc.castShadow = true;
             fore.add(disc);
-            /* 锯齿刃（多个小三角沿刃边排列） */
-            for (var s = 0; s < 6; s++) {
-              Models._box(fore, H * 0.01, H * 0.02, H * 0.015, Models._mat(0xdfe6ec, { metalness: 1, roughness: 0.2 }),
-                (s - 2.5) * H * 0.012, -H * 0.17 - s * H * 0.045, H * 0.11 + s * H * 0.002);
+            var sgnB = (side === 'R' ? 1 : -1);
+            var bladeRig = Models._part('bladeRig' + side, fore, 0, 0, 0);
+            bladeRig.rotation.y = -0.45;   // 刀面转向镜头约 45°，避免只看到一条刀刃侧棱
+            var bladeLen = H * 0.40;
+            var bw = H * 0.054;
+            var bladeShape = new THREE.Shape();
+            bladeShape.moveTo(-bw * 0.46, 0);
+            bladeShape.lineTo(bw * 0.46, 0);
+            bladeShape.quadraticCurveTo(bw * 0.60, -bladeLen * 0.18, bw * 0.46, -bladeLen * 0.55);
+            bladeShape.quadraticCurveTo(bw * 0.28, -bladeLen * 0.82, bw * 0.05, -bladeLen);
+            bladeShape.lineTo(-bw * 0.32, -bladeLen * 0.95);
+            bladeShape.quadraticCurveTo(-bw * 0.55, -bladeLen * 0.54, -bw * 0.50, -bladeLen * 0.18);
+            bladeShape.closePath();
+            var bladeGeo = new THREE.ExtrudeGeometry(bladeShape, {
+              depth: H * 0.016, bevelEnabled: true,
+              bevelThickness: H * 0.004, bevelSize: H * 0.003, bevelSegments: 2, curveSegments: 4
+            });
+            var bladeBody = new THREE.Mesh(bladeGeo, steel);
+            bladeBody.position.set(0, -H * 0.045, H * 0.092);
+            bladeBody.castShadow = true; bladeBody.receiveShadow = true;
+            bladeRig.add(bladeBody);
+            /* 刀脊与血槽：用深色窄条把刀身分成“厚背 + 薄刃” */
+            Models._box(bladeRig, H * 0.014, bladeLen * 0.94, H * 0.012, dark, -sgnB * bw * 0.26, -H * 0.045 - bladeLen * 0.48, H * 0.112);
+            Models._box(bladeRig, H * 0.009, bladeLen * 0.54, H * 0.008, accent, 0, -H * 0.045 - bladeLen * 0.34, H * 0.114);
+            /* 外缘锯齿用实体钢齿，只在刃口留一条极细的能量线，
+               避免整把刀变成一根发光棒 */
+            for (var s = 0; s < 8; s++) {
+              var tY = -H * 0.045 - bladeLen * (0.10 + s * 0.105);
+              var tX = sgnB * (bw * (0.44 - s * 0.008) + H * 0.006);
+              var tooth = Models._box(bladeRig, H * 0.020, H * 0.026, H * 0.018, steel, tX, tY, H * 0.112);
+              tooth.rotation.z = sgnB * (0.5 + s * 0.015);
             }
-            var edge = Models._box(fore, H * 0.012, H * 0.33, H * 0.012, glow, 0, -H * 0.18, H * 0.105);
-            edge.material = glow;
+            Models._box(bladeRig, H * 0.0035, bladeLen * 0.52, H * 0.004, bladeGlow,
+              sgnB * bw * 0.47, -H * 0.045 - bladeLen * 0.32, H * 0.115);
+            /* 刀尖插槽：拖尾 / 刀光读取世界坐标 */
+            Models._part(side === 'R' ? 'bladeR' : 'bladeL', bladeRig, 0, -H * 0.045 - bladeLen, H * 0.108);
           } else if (def.weapon.type === 'cannon') {
             /* 腕部重型炮管 */
-            var barrel = Models._cyl(fore, H * 0.035, H * 0.03, H * 0.16, dark, 0, -H * 0.16, H * 0.08, 12);
+            var barrel = Models._cyl(fore, H * 0.04, H * 0.034, H * 0.19, dark, 0, -H * 0.16, H * 0.085, 14);
             barrel.rotation.x = Math.PI / 2;
-            Models._cyl(fore, H * 0.045, H * 0.045, H * 0.04, accent, 0, -H * 0.12, H * 0.04, 12);
-            Models._cyl(fore, H * 0.02, H * 0.02, H * 0.03, glowWarm, 0, -H * 0.16, H * 0.17, 8).rotation.x = Math.PI / 2;
+            Models._cyl(fore, H * 0.052, H * 0.052, H * 0.05, accent, 0, -H * 0.13, H * 0.045, 14);
+            Models._cyl(fore, H * 0.022, H * 0.022, H * 0.035, glowWarm, 0, -H * 0.16, H * 0.19, 10).rotation.x = Math.PI / 2;
+            for (var vb = -1; vb <= 1; vb += 2) {
+              Models._box(fore, H * 0.015, H * 0.06, H * 0.02, accent, vb * H * 0.04, -H * 0.14, H * 0.1);
+            }
           }
         }
         if (side === 'L') {
-          /* 左臂：副武器 —— 均衡型为等离子炮，重击型为震波拳套 */
           if (heavy) {
             /* 震波拳套：加大拳头 + 指节冲击器 */
-            Models._box(fist, H * 0.1, H * 0.08, H * 0.1, accent, 0, -H * 0.03, 0);
+            Models._bevel(fist, H * 0.115 * w, H * 0.095, H * 0.115 * w, accent, 0, -H * 0.03, 0);
             for (var kn = -1; kn <= 1; kn += 2) {
-              Models._box(fist, H * 0.022, H * 0.022, H * 0.022, Models._mat(0x3a3f44, { metalness: 1 }), kn * H * 0.028, -H * 0.065, H * 0.04);
+              Models._box(fist, H * 0.026, H * 0.026, H * 0.026, steel, kn * H * 0.034, -H * 0.072, H * 0.045);
             }
-            Models._box(fist, H * 0.04, H * 0.015, H * 0.015, glowWarm, 0, -H * 0.07, H * 0.052);
+            Models._box(fist, H * 0.05, H * 0.018, H * 0.018, glowWarm, 0, -H * 0.078, H * 0.06);
           } else {
-            var gunBody = Models._box(fore, H * 0.06, H * 0.06, H * 0.1, dark, 0, -H * 0.12, H * 0.05);
-            for (var b = -1; b <= 1; b += 2) {
-              Models._cyl(fore, H * 0.012, H * 0.012, H * 0.12, Models._mat(0x22282d, { metalness: 1 }), b * H * 0.018, -H * 0.12, H * 0.1, 8).rotation.x = Math.PI / 2;
-            }
-            Models._box(fore, H * 0.05, H * 0.04, H * 0.04, glowWarm, 0, -H * 0.12, H * 0.13);
+            /* 双链锯形态：左腕只保留液压锁与发光导线，避免与刀身同时出现炮管 */
+            Models._box(fore, H * 0.095 * w, H * 0.028, H * 0.04, steel, 0, -H * 0.165, H * 0.07);
+            Models._box(fore, H * 0.012, H * 0.075, H * 0.012, glowWarm, 0, -H * 0.115, H * 0.098);
           }
         }
       });
@@ -432,20 +730,22 @@
     buildKaiju: function (def) {
       var H = def.height * (def.scale || 1);
       var fast = def.style === 'fast';
-      var bulk = fast ? 0.92 : 1.22;
+      var bulk = fast ? 0.94 : 1.16;
       var tex = unitTextures('kaiju');
       var KDEF = (AC.material || {});
       var ks = KDEF.kaijuSkin || { metalness: 0.05, roughness: 0.9 };
       var kb = KDEF.kaijuBelly || { metalness: 0.05, roughness: 0.85 };
       var kp = KDEF.kaijuPlate || { metalness: 0.35, roughness: 0.8 };
       /* 甲壳黏液微弱自发光：雨夜里皮肤缝渗出冷绿微光，不做高亮泛光 */
-      var skin = Models._mat(def.skin, { metalness: ks.metalness, roughness: ks.roughness, flat: true, maps: tex, normalScale: 1.25, emissive: 0x0d2a22, emissiveIntensity: 0.55 });
-      var belly = Models._mat(def.belly, { metalness: kb.metalness, roughness: kb.roughness, flat: true, maps: tex, normalScale: 0.9 });
-      var plate = Models._mat(0x2b3238, { metalness: kp.metalness, roughness: kp.roughness, flat: true, maps: tex, normalScale: 1.1 });
+      var skin = Models._mat(def.skin, { metalness: ks.metalness, roughness: ks.roughness, maps: tex, normalScale: 2.0, emissive: 0x0c241f, emissiveIntensity: 0.18 });
+      var belly = Models._mat(def.belly, { metalness: kb.metalness, roughness: kb.roughness, maps: tex, normalScale: 0.85, emissive: 0x0a211c, emissiveIntensity: 0.12 });
+      var plate = Models._mat(0x4a555c, { metalness: kp.metalness, roughness: kp.roughness, flat: true, maps: tex, normalScale: 1.1 });
+      var bone = Models._mat(0xc9c2a8, { metalness: 0.05, roughness: 0.45, flat: true });
       var glow = Models._glowMat(def.glow, (AC.glow && AC.glow.kaijuCore) || 0.95);
       var glowSoft = Models._glowMat(def.glow, (AC.glow && AC.glow.kaijuSoft) || 0.6);
+      var eyeGlow = Models._glowMat(0xffb648, 1.15);   // 琥珀色兽眼：比荧光绿更像生物，也不会过曝成白球
       var spikeMat = Models._mat(0x1a1f22, { metalness: 0.1, roughness: 0.6, flat: true });
-      var glowMaterials = [glow, glowSoft];
+      var glowMaterials = [glow, glowSoft, eyeGlow];
 
       /* 生物尖刺：细长锥体，可指定朝向。用于重甲怪兽全身骨刺 */
       function spike(parent, len, rad, x, y, z, rotX, rotY, rotZ, mat) {
@@ -463,161 +763,397 @@
       root.name = def.id;
       var parts = {};
 
-      /* --- 腿（蹲伏式，膝盖后折）--- */
-      var thighLen = H * (fast ? 0.30 : 0.34), shinLen = H * (fast ? 0.30 : 0.28);
+      /* 脚下软接触阴影：巨兽踩在湿地面上，有明确落点 */
+      var shadowTex = Models._shadowTexture();
+      if (shadowTex) {
+        var shadow = new THREE.Mesh(
+          new THREE.PlaneGeometry(H * 0.95, H * 0.55),
+          new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, opacity: 0.68, depthWrite: false })
+        );
+        shadow.name = 'contactShadow';
+        shadow.rotation.x = -Math.PI / 2;
+        shadow.position.y = 0.035;
+        shadow.renderOrder = 2;
+        root.add(shadow);
+      }
+
+      /* --- 腿：数趾落地 + 屈膝蓄力轮廓 --- */
+      var thighLen = H * (fast ? 0.29 : 0.27), shinLen = H * (fast ? 0.23 : 0.21);
+      var legTop = H * (fast ? 0.55 : 0.53);
       ['L', 'R'].forEach(function (side) {
         var sgn = (side === 'L' ? -1 : 1);
-        var leg = Models._part('leg' + side, root, sgn * H * 0.11 * bulk, H * 0.44, -H * 0.02);
-        leg.rotation.z = sgn * 0.12;
-        Models._box(leg, H * 0.12 * bulk, thighLen, H * 0.14, skin, 0, -thighLen * 0.5, 0);
-        Models._box(leg, H * 0.13 * bulk, thighLen * 0.4, H * 0.15, belly, 0, -thighLen * 0.35, H * 0.01);
+        var leg = Models._part('leg' + side, root, sgn * H * 0.135 * bulk, legTop, -H * 0.015);
+        /* 髋关节球 */
+        Models._ellipsoid(leg, H * 0.072 * bulk, H * 0.072, H * 0.075 * bulk, skin, 0, 0, 0);
+        /* 大腿：前后拉长的连续肌肉 */
+        var thighR = H * 0.056 * bulk;
+        var thighMesh = Models._capsule(leg, thighR, Math.max(thighR, thighLen - thighR * 2.0), skin, 0, -thighLen * 0.5, H * 0.005, 16);
+        thighMesh.scale.z = 1.28;
+        /* 前侧股甲/鳞片 */
+        for (var tf = 0; tf < 3; tf++) {
+          Models._bevel(leg, H * (0.07 - tf * 0.008) * bulk, thighLen * 0.20, H * 0.022,
+            tf === 1 && !fast ? plate : belly, 0, -thighLen * (0.24 + tf * 0.20), H * (0.062 - tf * 0.004),
+            0, H * 0.004);
+        }
+        if (!fast) {
+          Models._bevel(leg, H * 0.10 * bulk, thighLen * 0.34, H * 0.05, plate, sgn * H * 0.018, -thighLen * 0.28, H * 0.045, 0, H * 0.005);
+        }
+        Models._box(leg, H * 0.010, thighLen * 0.26, H * 0.012, glowSoft, sgn * H * 0.062 * bulk, -thighLen * 0.55, H * 0.04);
+        /* 后侧肌腱 */
+        Models._ellipsoid(leg, H * 0.036 * bulk, thighLen * 0.24, H * 0.045, skin, 0, -thighLen * 0.62, -H * 0.055);
+
         var shin = Models._part('shin' + side, leg, 0, -thighLen, 0);
-        Models._cyl(shin, H * 0.045, H * 0.05, H * 0.05, plate, 0, 0, 0, 8).rotation.z = Math.PI / 2;
-        Models._box(shin, H * 0.1 * bulk, shinLen, H * 0.11, skin, 0, -shinLen * 0.5, 0);
+        Models._ellipsoid(shin, H * 0.062 * bulk, H * 0.06, H * 0.065, spikeMat, 0, 0, 0);
+        var shinR = H * 0.047 * bulk;
+        var shinMesh = Models._capsule(shin, shinR, Math.max(shinR, shinLen - shinR * 2.0), skin, 0, -shinLen * 0.5, 0, 16);
+        shinMesh.scale.z = 1.22;
+        var calf = Models._ellipsoid(shin, H * 0.038 * bulk, shinLen * 0.30, H * 0.05, skin, 0, -shinLen * 0.42, -H * 0.045);
+        calf.rotation.x = -0.2;
+        Models._bevel(shin, H * 0.078 * bulk, shinLen * 0.46, H * 0.028, belly, 0, -shinLen * 0.34, H * 0.058, 0, H * 0.004);
+        Models._box(shin, H * 0.010, shinLen * 0.34, H * 0.012, glowSoft, sgn * H * 0.038, -shinLen * 0.52, H * 0.062);
+        /* 踝关节 */
+        Models._ellipsoid(shin, H * 0.046 * bulk, H * 0.04, H * 0.05, spikeMat, 0, -shinLen, 0);
         var foot = Models._part('foot' + side, shin, 0, -shinLen, 0);
-        Models._box(foot, H * 0.12 * bulk, H * 0.05, H * 0.2, skin, 0, H * 0.025, H * 0.03);
+        /* 脚掌：低楔形，三趾前伸 */
+        Models._bevel(foot, H * 0.16 * bulk, H * 0.055, H * 0.17, skin, 0, H * 0.028, H * 0.02, 0, H * 0.006);
+        Models._bevel(foot, H * 0.11 * bulk, H * 0.028, H * 0.10, belly, 0, H * 0.06, -H * 0.005, 0, H * 0.003);
         for (var t = 0; t < 3; t++) {
-          Models._box(foot, H * 0.025, H * 0.03, H * 0.05, plate, (t - 1) * H * 0.035, H * 0.02, H * 0.13);
+          var tx = (t - 1) * H * 0.052 * bulk;
+          var toe = Models._ellipsoid(foot, H * 0.030 * bulk, H * 0.028, H * 0.095, belly, tx, H * 0.024, H * 0.14);
+          toe.rotation.y = (t - 1) * 0.16;
+          spike(foot, H * 0.085, H * 0.018, tx * 1.1, H * 0.026, H * 0.235, Math.PI / 2, 0, 0, bone);
         }
+        spike(foot, H * 0.07, H * 0.02, 0, H * 0.05, -H * 0.105, -Math.PI / 2, 0, 0, bone);
       });
 
-      /* --- 髋 / 躯干 --- */
-      var hips = Models._part('hip', root, 0, H * 0.46, -H * 0.03);
-      Models._box(hips, H * 0.22 * bulk, H * 0.16, H * 0.2 * bulk, skin, 0, 0, 0);
-      var torso = Models._part('torso', root, 0, H * 0.58, -H * 0.02);
+      /* --- 髋 / 躯干：前倾的巨兽重心，胸腔前后拉长 --- */
+      var hips = Models._part('hip', root, 0, H * 0.54, -H * 0.02);
+      Models._ellipsoid(hips, H * 0.118 * bulk, H * 0.088, H * 0.105 * bulk, skin, 0, -H * 0.005, H * 0.005);
+      Models._bevel(hips, H * 0.17 * bulk, H * 0.055, H * 0.14 * bulk, belly, 0, -H * 0.075, H * 0.04, 0, H * 0.006);
+      for (var hg = -1; hg <= 1; hg += 2) {
+        Models._ellipsoid(hips, H * 0.045 * bulk, H * 0.07, H * 0.06 * bulk, skin, hg * H * 0.095 * bulk, -H * 0.03, -H * 0.05);
+        if (!fast) Models._bevel(hips, H * 0.045, H * 0.10, H * 0.05, plate, hg * H * 0.13 * bulk, H * 0.015, H * 0.02, 0, H * 0.004);
+      }
+      /* 前倾枢轴：不参与动画，给所有动画一个天然弓背基线 */
+      var torsoPivot = Models._part('torsoPivot', root, 0, H * 0.59, -H * 0.015);
+      torsoPivot.rotation.x = fast ? 0.22 : 0.15;
+      var torso = Models._part('torso', torsoPivot, 0, 0, 0);
       parts.torso = torso;
-      var chest = Models._part('chest', torso, 0, H * 0.07, 0);
-      Models._bevel(chest, H * 0.26 * bulk, H * 0.2, H * 0.22 * bulk, skin, 0, 0, 0);
-      Models._box(chest, H * 0.2 * bulk, H * 0.18, H * 0.1, belly, 0, -H * 0.02, H * 0.09);   // 胸腹
-      /* 背部生物发光甲板 / 脊刺 */
-      var spine = Models._part('spine', torso, 0, H * 0.15, -H * 0.09 * bulk);
-      for (var i = 0; i < 5; i++) {
-        var s = 1 - i * 0.12;
-        Models._box(spine, H * 0.055 * s * bulk, H * 0.07 * s, H * 0.06, plate, 0, H * 0.035 * i, -H * 0.01 * i);
-        Models._box(spine, H * 0.02, H * 0.05 * s, H * 0.012, glow, 0, H * 0.04 * i, -H * 0.045);   // 发光纹路
+      /* 腰腹 */
+      Models._ellipsoid(torso, H * 0.10 * bulk, H * 0.09, H * 0.095 * bulk, skin, 0, -H * 0.055, 0);
+      var chest = Models._part('chest', torso, 0, H * 0.105, H * 0.01);
+      /* 胸腔主体：宽厚、前后更长，侧视是一个前倾的桶形 */
+      Models._ellipsoid(chest, H * 0.155 * bulk, H * 0.125, H * 0.175 * bulk, skin, 0, 0, -H * 0.015);
+      Models._ellipsoid(chest, H * 0.10 * bulk, H * 0.10, H * 0.13 * bulk, skin, 0, H * 0.045, -H * 0.07); // 背峰
+      /* 斜方肌 */
+      for (var mg2 = -1; mg2 <= 1; mg2 += 2) {
+        Models._ellipsoid(chest, H * 0.062 * bulk, H * 0.042, H * 0.07, skin, mg2 * H * 0.085 * bulk, H * 0.112, -H * 0.015);
+      }
+      /* 胸肌/胸骨：腹色只做小块肌肉，胸骨改用深色角质，避免胸口出现米色十字 */
+      for (var pc = -1; pc <= 1; pc += 2) {
+        var pec = Models._bevel(chest, H * 0.088 * bulk, H * 0.052, H * 0.022, belly,
+          pc * H * 0.072 * bulk, -H * 0.005, H * 0.158 * bulk, 0, H * 0.005);
+        pec.rotation.z = pc * 0.12;
+      }
+      Models._bevel(chest, H * 0.038 * bulk, H * 0.175, H * 0.028, plate, 0, -H * 0.025, H * 0.166 * bulk, 0, H * 0.006);
+      /* 腹部横带：窄而贴合，从胸下延伸到髋部 */
+      for (var sc = 0; sc < 5; sc++) {
+        Models._ellipsoid(torso, H * (0.086 - sc * 0.009) * bulk, H * 0.020, H * 0.026, sc === 2 ? plate : belly,
+          0, -H * 0.02 - sc * H * 0.032, H * 0.074 - sc * H * 0.002);
+      }
+      /* 腰侧发光腺体 */
+      for (var gg = -1; gg <= 1; gg += 2) {
+        Models._box(torso, H * 0.012, H * 0.09, H * 0.05, glowSoft, gg * H * 0.10 * bulk, H * 0.02, -H * 0.055);
       }
       if (!fast) {
-        /* 重甲型：大型背甲板 + 满背骨刺 */
-        Models._bevel(torso, H * 0.3 * bulk, H * 0.05, H * 0.2 * bulk, plate, 0, H * 0.19, -H * 0.03);
-        Models._box(torso, H * 0.24 * bulk, H * 0.04, H * 0.16 * bulk, plate, 0, H * 0.13, -H * 0.06);
-        for (var g = -1; g <= 1; g += 2) Models._box(torso, H * 0.015, H * 0.12, H * 0.06, glowSoft, g * H * 0.11 * bulk, H * 0.05, -H * 0.11 * bulk);
-        /* 背甲板上两排纵向骨刺 */
-        for (var br = 0; br < 6; br++) {
-          var by = H * 0.14 + br * H * 0.025;
-          var bz = -H * 0.02 - br * H * 0.025;
-          spike(torso, H * (0.1 - br * 0.008), H * 0.013, -H * 0.06 * bulk, by, bz, -0.55, 0, 0);
-          spike(torso, H * (0.1 - br * 0.008), H * 0.013, H * 0.06 * bulk, by, bz, -0.55, 0, 0);
+        /* 重甲型：宽背甲 + 肩部大刺 */
+        Models._bevel(chest, H * 0.24 * bulk, H * 0.05, H * 0.20 * bulk, plate, 0, H * 0.10, -H * 0.055);
+        for (var br = 0; br < 5; br++) {
+          var bz = -H * 0.04 - br * H * 0.028;
+          spike(torso, H * (0.10 - br * 0.008), H * 0.016, -H * 0.075 * bulk, H * 0.15 - br * H * 0.022, bz, -0.55, 0, -0.2, plate);
+          spike(torso, H * (0.10 - br * 0.008), H * 0.016, H * 0.075 * bulk, H * 0.15 - br * H * 0.022, bz, -0.55, 0, 0.2, plate);
         }
-        /* 中央一列更高的骨刺 */
-        for (var bc = 0; bc < 5; bc++) {
-          spike(torso, H * (0.13 - bc * 0.01), H * 0.016, 0, H * 0.16 + bc * H * 0.028, -H * 0.04 - bc * H * 0.028, -0.5, 0, 0);
-        }
-        /* 肩部两侧大刺 */
-        spike(torso, H * 0.14, H * 0.02, -H * 0.16 * bulk, H * 0.12, H * 0.02, -0.4, 0, -0.5);
-        spike(torso, H * 0.14, H * 0.02, H * 0.16 * bulk, H * 0.12, H * 0.02, -0.4, 0, 0.5);
+      }
+      /* 背部骨板：从颈后延伸到腰，侧视是连续锯齿背 */
+      var finN = fast ? 7 : 6;
+      for (var fi = 0; fi < finN; fi++) {
+        var ft = fi / (finN - 1);
+        var fy = H * (0.20 - ft * 0.11);
+        var fz = -H * (0.10 + ft * 0.015);
+        var fh = H * (fast ? (0.135 - Math.abs(ft - 0.32) * 0.10) : (0.115 - Math.abs(ft - 0.4) * 0.06));
+        var fl = H * (0.085 - ft * 0.02);
+        Models._poly(torso, [
+          [-fl, 0], [fl, 0], [fl * 0.55, fh * 0.32], [fl * 0.18, fh], [-fl * 0.35, fh * 0.45]
+        ], H * 0.024, bone, 0, fy, fz, { rotY: Math.PI / 2 });
+      }
+      /* 脊背发光缝 */
+      for (var gs = 0; gs < 5; gs++) {
+        Models._box(torso, H * 0.014, H * 0.018, H * 0.055, glow, 0, H * 0.16 - gs * H * 0.045, -H * 0.055 - gs * H * 0.012);
       }
 
-      /* --- 颈 / 头（含可动的上下颚）--- */
-      var neck = Models._part('neck', torso, 0, H * 0.16, H * 0.02);
-      neck.rotation.x = 0.18;
-      Models._cyl(neck, H * 0.05, H * 0.06, H * 0.1, skin, 0, H * 0.03, 0, 8);
-      var head = Models._part('head', neck, 0, H * 0.09, H * 0.03);
-      var headLen = H * (fast ? 0.22 : 0.17);
-      var headW = H * (fast ? 0.13 : 0.16);
+      /* --- 颈 / 头：长颈前伸 + 刀锋骨冠 --- */
+      var neckPivot = Models._part('neckPivot', torso, 0, H * 0.195, H * 0.07);
+      /* 抵消前倾躯干：脖子反向抬起，头保持接近水平，骨冠才不会被肩挡住 */
+      neckPivot.rotation.x = fast ? -0.16 : -0.08;
+      var neck = Models._part('neck', neckPivot, 0, 0, 0);
+      var neckLen = H * (fast ? 0.14 : 0.12);
+      Models._cyl(neck, H * 0.062, H * 0.095, neckLen, skin, 0, neckLen * 0.35, 0, 12);
+      for (var nf = 0; nf < 3; nf++) {
+        Models._bevel(neck, H * (0.085 - nf * 0.008), neckLen * 0.22, H * 0.028, belly,
+          0, neckLen * (0.2 + nf * 0.22), H * 0.055, 0, H * 0.003);
+      }
+      Models._ellipsoid(neck, H * 0.045, neckLen * 0.4, H * 0.05, skin, -H * 0.055, neckLen * 0.45, 0);
+      Models._ellipsoid(neck, H * 0.045, neckLen * 0.4, H * 0.05, skin, H * 0.055, neckLen * 0.45, 0);
+      for (var ns = 0; ns < 3; ns++) {
+        spike(neck, H * (0.09 - ns * 0.012), H * 0.014, 0, neckLen * (0.25 + ns * 0.22), -H * 0.06, -0.6, 0, 0, bone);
+      }
+      var head = Models._part('head', neck, 0, neckLen * 0.80, H * 0.045);
+      var headLen = H * (fast ? 0.33 : 0.28);
+      var headW = H * (fast ? 0.215 : 0.235);
       if (fast) {
-        /* 镰刃魔（刀锋头）：刀状楔形头 —— 俯视呈三角形，前尖后宽 */
-        var headShape = new THREE.Shape();
-        headShape.moveTo(0, headLen);
-        headShape.lineTo(-headW * 0.5, 0);
-        headShape.lineTo(headW * 0.5, 0);
-        headShape.lineTo(0, headLen);
-        var headGeo = new THREE.ExtrudeGeometry(headShape, { depth: H * 0.085, bevelEnabled: false, curveSegments: 2 });
-        headGeo.rotateX(-Math.PI / 2);
-        var skull = new THREE.Mesh(headGeo, skin);
-        skull.castShadow = true; skull.receiveShadow = true;
-        skull.position.set(0, 0, headLen * 0.35);
-        head.add(skull);
-        /* 刀背脊冠（头顶纵向凸起） */
-        Models._box(head, H * 0.016, H * 0.055, headLen * 0.7, plate, 0, H * 0.045, headLen * 0.4);
-        /* 横向眼缝发光（刀锋头标志性横眼） */
-        Models._box(head, headW * 0.72, H * 0.016, H * 0.014, glow, 0, H * 0.015, headLen * 0.55);
-        Models._box(head, H * 0.012, H * 0.09, H * 0.012, glowSoft, -H * 0.05, H * 0.08, headLen * 0.28).rotation.z = 0.35;
-        Models._box(head, H * 0.012, H * 0.09, H * 0.012, glowSoft, H * 0.05, H * 0.08, headLen * 0.28).rotation.z = -0.35;
+        /* 刀锋头：楔形颅骨 + 从鼻梁扬起的巨大骨刃 */
+        Models._ellipsoid(head, headW * 0.46, H * 0.082, headLen * 0.46, skin, 0, H * 0.015, headLen * 0.30);
+        var snout = Models._cyl(head, headW * 0.20, headW * 0.40, headLen * 0.52, skin, 0, -H * 0.005, headLen * 0.62, 10);
+        snout.rotation.x = Math.PI / 2;
+        Models._ellipsoid(head, headW * 0.42, H * 0.042, headLen * 0.24, skin, 0, H * 0.012, headLen * 0.72);
+        /* 颅顶骨冠：高耸、前伸、侧视 unmistakable 的刀锋轮廓 */
+        Models._poly(head, [
+          [-headLen * 0.24, 0],
+          [headLen * 0.30, 0],
+          [headLen * 0.18, H * 0.045],
+          [headLen * 0.06, H * 0.125],
+          [-headLen * 0.04, H * 0.150],
+          [-headLen * 0.14, H * 0.090],
+          [-headLen * 0.22, H * 0.035]
+        ], H * 0.034, bone, 0, H * 0.055, headLen * 0.26, { rotY: -Math.PI / 2 });
+        /* 副冠：左右各一片薄骨板，增加厚度感 */
+        for (var cr = -1; cr <= 1; cr += 2) {
+          Models._poly(head, [
+            [-headLen * 0.16, 0],
+            [headLen * 0.16, 0],
+            [headLen * 0.06, H * 0.075],
+            [-headLen * 0.03, H * 0.09],
+            [-headLen * 0.12, H * 0.04]
+          ], H * 0.012, plate, cr * H * 0.028, H * 0.05, headLen * 0.24, { rotY: -Math.PI / 2 });
+        }
+        /* 眉脊 / 眼窝 / 发光眼：眼睛必须探出颅骨侧面，否则从三分之四视角完全看不见 */
+        for (var e2 = -1; e2 <= 1; e2 += 2) {
+          var brow = Models._bevel(head, headW * 0.22, H * 0.020, H * 0.045, bone, e2 * headW * 0.30, H * 0.055, headLen * 0.56, 0, H * 0.003);
+          brow.rotation.z = -e2 * 0.30;
+          Models._ellipsoid(head, H * 0.030, H * 0.032, headLen * 0.042, spikeMat, e2 * headW * 0.395, H * 0.020, headLen * 0.615);
+          Models._ellipsoid(head, H * 0.014, H * 0.019, headLen * 0.030, eyeGlow, e2 * headW * 0.452, H * 0.020, headLen * 0.63);
+          /* 竖瞳：在发光眼球外侧压一条深色窄缝，远看也有“眼睛”而不是光点 */
+          Models._box(head, H * 0.007, H * 0.014, headLen * 0.008, spikeMat, e2 * headW * 0.493, H * 0.020, headLen * 0.642);
+          var lid = Models._bevel(head, H * 0.052, H * 0.012, headLen * 0.036, skin, e2 * headW * 0.445, H * 0.032, headLen * 0.632, 0, H * 0.002);
+          lid.rotation.z = -e2 * 0.34;
+          spike(head, H * 0.10, H * 0.015, e2 * headW * 0.42, H * 0.015, headLen * 0.30, Math.PI / 2, 0, e2 * 0.3, bone);
+          Models._box(head, H * 0.008, H * 0.05, H * 0.008, glowSoft, e2 * H * 0.052, H * 0.06, headLen * 0.28).rotation.z = -e2 * 0.35;
+        }
+        spike(head, headLen * 0.20, H * 0.014, 0, H * 0.085, headLen * 0.10, -0.75, 0, 0, bone);
       } else {
-        /* 重甲（布劳斯）：方颅 + 头顶骨刺 */
-        Models._box(head, headW, H * 0.12, headLen, skin, 0, 0, headLen * 0.35);
-        Models._box(head, headW * 0.82, H * 0.06, headLen * 0.72, plate, 0, H * 0.055, headLen * 0.3);
-        for (var hs = -1; hs <= 1; hs++) spike(head, H * 0.09, H * 0.014, hs * H * 0.035, H * 0.095, headLen * 0.12, -0.2, 0, 0);
-        spike(head, H * 0.13, H * 0.017, 0, H * 0.1, headLen * 0.28, -0.15, 0, 0);
-        /* 双眼 */
-        for (var e2 = -1; e2 <= 1; e2 += 2) Models._box(head, H * 0.022, H * 0.022, H * 0.022, glow, e2 * H * 0.045, H * 0.02, headLen * 0.55);
+        /* 棱皮龟：宽方颅 + 厚重眉脊 + 头顶骨刺 */
+        Models._bevel(head, headW, H * 0.155, headLen * 0.95, skin, 0, 0, headLen * 0.36, 0, H * 0.012);
+        Models._ellipsoid(head, headW * 0.44, H * 0.075, headLen * 0.34, skin, 0, H * 0.062, headLen * 0.32);
+        Models._ellipsoid(head, headW * 0.34, H * 0.06, headLen * 0.24, skin, 0, H * 0.015, headLen * 0.70);
+        Models._box(head, headW * 1.02, H * 0.035, headLen * 0.16, plate, 0, H * 0.075, headLen * 0.72);
+        Models._box(head, headW * 0.86, H * 0.05, headLen * 0.60, plate, 0, H * 0.098, headLen * 0.26);
+        var snoutRidge = Models._bevel(head, headW * 0.28, H * 0.03, headLen * 0.42, plate, 0, H * 0.043, headLen * 0.64);
+        snoutRidge.rotation.x = -0.08;
+        for (var hs = -1; hs <= 1; hs++) {
+          spike(head, H * (hs === 0 ? 0.15 : 0.11), H * 0.019, hs * H * 0.045, H * 0.13, headLen * 0.16, -0.18, 0, 0, bone);
+        }
+        for (var e3 = -1; e3 <= 1; e3 += 2) {
+          /* 宽方颅的侧面几乎是平面，眼球要贴着侧面外沿才露得出来 */
+          Models._ellipsoid(head, H * 0.024, H * 0.028, headLen * 0.038, spikeMat, e3 * headW * 0.440, H * 0.038, headLen * 0.705);
+          Models._ellipsoid(head, H * 0.015, H * 0.019, headLen * 0.032, eyeGlow, e3 * headW * 0.505, H * 0.038, headLen * 0.718);
+          Models._box(head, H * 0.007, H * 0.014, headLen * 0.009, spikeMat, e3 * headW * 0.548, H * 0.038, headLen * 0.732);
+          var lid2 = Models._bevel(head, H * 0.060, H * 0.012, headLen * 0.040, skin, e3 * headW * 0.485, H * 0.052, headLen * 0.716, 0, H * 0.002);
+          lid2.rotation.z = -e3 * 0.34;
+          Models._box(head, headW * 0.16, H * 0.030, headLen * 0.18, bone, e3 * headW * 0.43, H * 0.080, headLen * 0.64);
+          Models._ellipsoid(head, H * 0.075, H * 0.078, headLen * 0.14, skin, e3 * headW * 0.34, H * 0.005, headLen * 0.52);
+          Models._box(head, H * 0.055, H * 0.075, H * 0.06, plate, e3 * H * 0.09, H * 0.018, headLen * 0.65);
+          spike(head, H * 0.10, H * 0.02, e3 * H * 0.095, H * 0.005, headLen * 0.55, 0, 0, e3 * 0.9, bone);
+          spike(head, H * 0.075, H * 0.015, e3 * headW * 0.18, H * 0.052, headLen * 0.86, 1.35, 0, e3 * 0.2, bone);
+        }
+        Models._box(head, headW * 0.24, H * 0.024, H * 0.045, spikeMat, 0, H * 0.025, headLen * 0.88);
       }
-      var jawUp = Models._part('jawUpper', head, 0, -H * 0.01, headLen * 0.6);   // 上颚（前伸）
-      Models._box(jawUp, H * (fast ? 0.085 : 0.1), H * 0.045, headLen * 0.45, skin, 0, 0, headLen * 0.2);
-      for (var tu = 0; tu < 4; tu++) Models._box(jawUp, H * 0.014, H * 0.03, H * 0.014, Models._mat(0xdfe6ea, { roughness: 0.3 }), (tu - 1.5) * H * 0.022, -H * 0.02, headLen * 0.4);
-      var jawLow = Models._part('jawLower', head, 0, -H * 0.045, headLen * 0.55);
-      Models._box(jawLow, H * (fast ? 0.08 : 0.095), H * 0.035, headLen * 0.42, belly, 0, 0, headLen * 0.2);
-      for (var tl = 0; tl < 4; tl++) Models._box(jawLow, H * 0.012, H * 0.025, H * 0.012, Models._mat(0xdfe6ea, { roughness: 0.3 }), (tl - 1.5) * H * 0.02, H * 0.015, headLen * 0.38);
-      Models._box(jawLow, H * 0.05, H * 0.01, headLen * 0.3, glow, 0, -H * 0.02, headLen * 0.25);    // 口腔发光
-      /* 重甲：下颚两侧骨刺 */
+      var jawUp = Models._part('jawUpper', head, 0, -H * 0.035, headLen * 0.62);
+      Models._box(jawUp, headW * 0.72, H * 0.05, headLen * 0.55, skin, 0, 0, headLen * 0.25);
+      Models._ellipsoid(jawUp, headW * 0.36, H * 0.032, headLen * 0.27, skin, 0, H * 0.004, headLen * 0.27);
+      Models._ellipsoid(jawUp, headW * 0.10, H * 0.022, headLen * 0.16, belly, 0, H * 0.014, headLen * 0.44);
+      for (var tu = 0; tu < 6; tu++) {
+        var tux = (tu - 2.5) * headW * 0.1;
+        spike(jawUp, H * 0.068, H * 0.012, tux, -H * 0.025, headLen * 0.36, Math.PI, 0, 0, bone);
+      }
+      var jawLow = Models._part('jawLower', head, 0, -H * 0.082, headLen * 0.56);
+      Models._box(jawLow, headW * 0.66, H * 0.045, headLen * 0.5, belly, 0, 0, headLen * 0.22);
+      Models._ellipsoid(jawLow, headW * 0.32, H * 0.028, headLen * 0.24, belly, 0, -H * 0.002, headLen * 0.23);
+      Models._ellipsoid(jawLow, headW * 0.20, H * 0.035, headLen * 0.13, skin, 0, -H * 0.008, headLen * 0.02);
+      Models._box(jawLow, headW * 0.34, H * 0.022, headLen * 0.42, skin, 0, -H * 0.005, headLen * 0.2);
+      for (var tl = 0; tl < 5; tl++) {
+        var tlx = (tl - 2) * headW * 0.1;
+        spike(jawLow, H * 0.055, H * 0.011, tlx, H * 0.022, headLen * 0.36, 0, 0, 0, bone);
+      }
+      Models._box(jawLow, headW * 0.42, H * 0.012, headLen * 0.22, glow, 0, -H * 0.012, headLen * 0.22);
+      for (var jw = -1; jw <= 1; jw += 2) {
+        Models._ellipsoid(jawLow, H * 0.04, H * 0.03, headLen * 0.11, skin, jw * headW * 0.31, H * 0.005, headLen * 0.16);
+      }
       if (!fast) {
-        spike(jawLow, H * 0.07, H * 0.01, -H * 0.05, H * 0.01, headLen * 0.2, 0.3, 0, -0.4);
-        spike(jawLow, H * 0.07, H * 0.01, H * 0.05, H * 0.01, headLen * 0.2, 0.3, 0, 0.4);
+        spike(jawLow, H * 0.11, H * 0.015, -headW * 0.38, H * 0.015, headLen * 0.28, 0.3, 0, -0.4, bone);
+        spike(jawLow, H * 0.11, H * 0.015, headW * 0.38, H * 0.015, headLen * 0.28, 0.3, 0, 0.4, bone);
       }
 
-      /* --- 前肢（利爪）--- */
+      /* --- 前肢：肩位抬高、肘部前屈，爪落在胸腹前而不是垂到膝盖 --- */
       ['L', 'R'].forEach(function (side) {
         var sgn = (side === 'L' ? -1 : 1);
-        var shoulder = Models._part('shoulder' + side, chest, sgn * H * 0.14 * bulk, H * 0.03, 0);
-        Models._box(shoulder, H * 0.08 * bulk, H * 0.09, H * 0.1 * bulk, skin, sgn * H * 0.01, -H * 0.01, 0);
-        var fore = Models._part('fore' + side, shoulder, 0, -H * 0.05, 0);
-        var upLen = H * (fast ? 0.24 : 0.19);
-        Models._box(fore, H * 0.06 * bulk, upLen, H * 0.07, skin, 0, -upLen * 0.5, 0);
-        Models._box(fore, H * 0.02, upLen * 0.5, H * 0.025, glowSoft, sgn * H * 0.03, -upLen * 0.5, 0);
-        var claw = Models._part('claw' + side, fore, 0, -upLen, 0);
-        var handLen = H * (fast ? 0.2 : 0.15);
-        Models._box(claw, H * 0.07 * bulk, handLen * 0.55, H * 0.08, skin, 0, -handLen * 0.3, 0);
-        for (var c = 0; c < 3; c++) {
-          var cl = Models._box(claw, H * 0.02, handLen * 0.7, H * 0.02, Models._mat(0x1b2024, { metalness: 0.3, roughness: 0.5 }), (c - 1) * H * 0.03, -handLen * 0.9, H * 0.01);
-          cl.rotation.x = 0.35;
+        var shoulder = Models._part('shoulder' + side, chest, sgn * H * 0.168 * bulk, H * 0.085, H * 0.062);
+        /* 三角肌：前后拉长的肌肉块，不再是正圆球 */
+        var shMass = Models._ellipsoid(shoulder, H * 0.052 * bulk, H * 0.060, H * 0.066, skin, 0, 0, 0);
+        shMass.rotation.z = sgn * 0.12;
+        /* 肩胛骨板：从颈侧向后包住肩膀，给出爬兽的肩背过渡 */
+        Models._poly(shoulder, [
+          [-H * 0.075, 0], [H * 0.07, H * 0.012], [H * 0.045, H * 0.072],
+          [0, H * 0.098], [-H * 0.058, H * 0.046]
+        ], H * 0.030, plate, 0, H * 0.040, -H * 0.012, { rotY: Math.PI / 2 });
+        spike(shoulder, H * 0.145, H * 0.022, sgn * H * 0.028, H * 0.082, -H * 0.008, -0.24, 0, -sgn * 0.55, bone);
+
+        /* 静态肩外展放在中间枢轴上：动画只驱动 fore，不会覆盖这层角度 */
+        var armRig = Models._part('armRig' + side, shoulder, 0, -H * 0.012, 0);
+        armRig.rotation.z = sgn * 0.20;
+        armRig.rotation.x = -0.05;
+        var upLen = H * (fast ? 0.135 : 0.125);
+        var armR = H * 0.044 * bulk;
+        var fore = Models._part('fore' + side, armRig, 0, 0, 0);
+        var upperArm = Models._capsule(fore, armR, upLen * 0.70, skin, 0, -upLen * 0.46, 0, 14);
+        upperArm.scale.z = 1.16;
+        /* 上臂外侧骨甲 + 后侧肌腱 */
+        Models._bevel(fore, H * 0.052 * bulk, upLen * 0.54, H * 0.042, plate,
+          sgn * H * 0.030, -upLen * 0.42, H * 0.010, 0, H * 0.005);
+        Models._ellipsoid(fore, H * 0.030, upLen * 0.28, H * 0.038, skin, 0, -upLen * 0.46, -H * 0.046);
+        Models._box(fore, H * 0.010, upLen * 0.32, H * 0.012, glowSoft, sgn * H * 0.044 * bulk, -upLen * 0.56, H * 0.050);
+
+        /* 肘关节：大幅前屈，前臂朝前下方，形成猛兽的持爪姿态 */
+        var elbowJoint = Models._part('elbow' + side, fore, 0, -upLen, 0);
+        elbowJoint.rotation.x = fast ? -0.42 : -0.36;
+        elbowJoint.rotation.z = -sgn * 0.08;
+        Models._ellipsoid(elbowJoint, H * 0.046, H * 0.050, H * 0.050, spikeMat, 0, 0, 0);
+        spike(elbowJoint, H * 0.115, H * 0.019, sgn * H * 0.038, H * 0.008, -H * 0.018, -0.42, 0, -sgn * 0.85, bone);
+        var foreLen = H * (fast ? 0.125 : 0.115);
+        var lowerR = armR * 0.86;
+        var lowerArm = Models._capsule(elbowJoint, lowerR, foreLen * 0.70, skin, 0, -foreLen * 0.44, 0, 14);
+        lowerArm.scale.z = 1.14;
+        /* 前臂板甲 + 向外翻的骨刃 */
+        Models._bevel(elbowJoint, H * 0.058 * bulk, foreLen * 0.60, H * 0.048, plate,
+          sgn * H * 0.022, -foreLen * 0.40, H * 0.012, 0, H * 0.006);
+        spike(elbowJoint, H * 0.155, H * 0.020, sgn * H * 0.048 * bulk, -foreLen * 0.44, -H * 0.004, -0.12, 0, -sgn * 1.18, bone);
+        Models._box(elbowJoint, H * 0.010, foreLen * 0.44, H * 0.012, glowSoft, sgn * H * 0.046 * bulk, -foreLen * 0.54, H * 0.052);
+
+        var claw = Models._part('claw' + side, elbowJoint, 0, -foreLen, 0);
+        var handLen = H * (fast ? 0.105 : 0.100);
+        var handR = H * 0.050 * bulk;
+        var handMesh = Models._capsule(claw, handR, handLen * 0.42, skin, 0, -handLen * 0.30, H * 0.004, 12);
+        handMesh.scale.z = 1.18;
+        /* 掌背骨甲：挥击时爪部有硬质高光轮廓 */
+        Models._poly(claw, [
+          [-H * 0.055, 0], [H * 0.050, H * 0.004], [H * 0.030, H * 0.048],
+          [0, H * 0.064], [-H * 0.040, H * 0.034]
+        ], H * 0.028, plate, 0, -handLen * 0.12, H * 0.042, { rotY: Math.PI / 2 });
+        /* 爪尖插槽：怪兽攻击拖尾读取世界坐标 */
+        Models._part('clawTip' + side, claw, 0, -handLen * 0.90, H * 0.012);
+        for (var c = 0; c < 4; c++) {
+          var cx = (c - 1.5) * H * 0.032;
+          Models._box(claw, H * 0.026, handLen * 0.48, H * 0.030, skin, cx, -handLen * 0.57, H * 0.008);
+          spike(claw, H * 0.115, H * 0.015, cx, -handLen * 0.86, H * 0.016, Math.PI - 0.20, 0, 0, bone); // 下弯利爪
         }
+        spike(claw, H * 0.10, H * 0.015, sgn * H * 0.060, -handLen * 0.45, H * 0.020, Math.PI * 0.62, 0, sgn * 0.30, bone); // 拇指爪
       });
 
-      /* --- 三段尾巴 --- */
-      var tailBase = Models._part('tailBase', hips, 0, H * 0.02, -H * 0.12);
-      tailBase.rotation.x = -0.25;
-      var tailLen = H * (fast ? 0.3 : 0.2);
-      Models._box(tailBase, H * 0.11 * bulk, H * 0.11, tailLen, skin, 0, 0, -tailLen * 0.5);
-      var tailMid = Models._part('tailMid', tailBase, 0, 0, -tailLen);
-      Models._box(tailMid, H * 0.085, H * 0.085, tailLen, skin, 0, 0, -tailLen * 0.5);
-      Models._box(tailMid, H * 0.03, H * 0.02, tailLen * 0.8, glowSoft, 0, -H * 0.05, -tailLen * 0.5);  // 尾下发光
-      var tailTip = Models._part('tailTip', tailMid, 0, 0, -tailLen);
-      Models._box(tailTip, H * 0.055, H * 0.055, tailLen * 0.7, skin, 0, 0, -tailLen * 0.35);
-      /* 尾巴背侧骨刺：重甲密集满布，速攻型少量 + 尾刃 */
+      /* --- 四段尾巴：粗根、上扬 S 曲线、连续尾鳍与骨刺 --- */
+      var tailRoot = Models._part('tailRoot', hips, 0, H * 0.005, -H * 0.12 * bulk);
+      tailRoot.rotation.x = -0.10;             // 先微微下垂，再由中段扬起
+      tailRoot.rotation.y = 0.18;              // 主要留在矢状面内，侧视能看到完整尾巴
+      var tailSeg = H * (fast ? 0.185 : 0.165);
+      var tailW = H * (fast ? 0.155 : 0.165) * bulk;
+
+      var tailBase = Models._part('tailBase', tailRoot, 0, 0, 0);
+      /* 尾根：与髋部相接的粗椭球，避免圆柱切面 */
+      Models._ellipsoid(tailBase, tailW * 0.52, tailW * 0.46, tailSeg * 0.58, skin, 0, 0, -tailSeg * 0.46);
+      Models._ellipsoid(tailBase, tailW * 0.42, tailW * 0.42, tailSeg * 0.34, skin, 0, tailW * 0.04, -tailSeg * 0.10);
+      /* 尾背浅色腱脊：夜色里勾出尾巴上缘，避免整条尾巴埋进暗部 */
+      Models._ellipsoid(tailBase, tailW * 0.30, tailW * 0.10, tailSeg * 0.40, belly, 0, tailW * 0.24, -tailSeg * 0.48);
+      /* 尾根背鳍：从髋后立起的一片骨板 */
+      Models._poly(tailBase, [
+        [-tailSeg * 0.40, 0], [tailSeg * 0.40, 0],
+        [tailSeg * 0.22, H * 0.075], [-tailSeg * 0.06, H * 0.155], [-tailSeg * 0.34, H * 0.050]
+      ], H * 0.022, bone, 0, tailW * 0.30, -tailSeg * 0.48, { rotY: Math.PI / 2 });
+
+      /* 静态 S 形弯：动画只驱动 tailBase，曲率挂在中间枢轴上不会被覆盖 */
+      var tailCurveA = Models._part('tailCurveA', tailBase, 0, 0, -tailSeg * 0.94);
+      tailCurveA.rotation.x = 0.17;
+      tailCurveA.rotation.y = 0.10;
+      var tailMid = Models._part('tailMid', tailCurveA, 0, 0, 0);
+      Models._ellipsoid(tailMid, tailW * 0.40, tailW * 0.36, tailSeg * 0.52, skin, 0, 0, -tailSeg * 0.46);
+      Models._ellipsoid(tailMid, tailW * 0.23, tailW * 0.08, tailSeg * 0.36, belly, 0, tailW * 0.18, -tailSeg * 0.46);
+      Models._box(tailMid, H * 0.026, H * 0.018, tailSeg * 0.72, glowSoft, 0, -tailW * 0.30, -tailSeg * 0.46); // 尾下发光
+      Models._poly(tailMid, [
+        [-tailSeg * 0.36, 0], [tailSeg * 0.34, 0],
+        [tailSeg * 0.16, H * 0.065], [-tailSeg * 0.06, H * 0.130], [-tailSeg * 0.30, H * 0.040]
+      ], H * 0.019, bone, 0, tailW * 0.24, -tailSeg * 0.46, { rotY: Math.PI / 2 });
+
+      var tailCurveB = Models._part('tailCurveB', tailMid, 0, 0, -tailSeg * 0.90);
+      tailCurveB.rotation.x = 0.19;
+      tailCurveB.rotation.y = 0.08;
+      var tailTip = Models._part('tailTip', tailCurveB, 0, 0, 0);
+      Models._ellipsoid(tailTip, tailW * 0.29, tailW * 0.26, tailSeg * 0.46, skin, 0, 0, -tailSeg * 0.42);
+      Models._ellipsoid(tailTip, tailW * 0.16, tailW * 0.06, tailSeg * 0.30, belly, 0, tailW * 0.13, -tailSeg * 0.42);
+      Models._poly(tailTip, [
+        [-tailSeg * 0.30, 0], [tailSeg * 0.26, 0],
+        [tailSeg * 0.10, H * 0.050], [-tailSeg * 0.06, H * 0.095], [-tailSeg * 0.26, H * 0.030]
+      ], H * 0.016, bone, 0, tailW * 0.18, -tailSeg * 0.42, { rotY: Math.PI / 2 });
+
+      var tailCurveC = Models._part('tailCurveC', tailTip, 0, 0, -tailSeg * 0.84);
+      tailCurveC.rotation.x = 0.16;
+      tailCurveC.rotation.y = 0.06;
+      var tailEnd = Models._part('tailEnd', tailCurveC, 0, 0, 0);
+      Models._ellipsoid(tailEnd, tailW * 0.20, tailW * 0.18, tailSeg * 0.34, skin, 0, 0, -tailSeg * 0.30);
+      /* 尾刃：一块明显高出尾尖的骨刃，侧视可直接辨认尾巴方向 */
+      Models._poly(tailEnd, [
+        [-tailSeg * 0.34, 0], [tailSeg * 0.24, 0], [tailSeg * 0.10, H * 0.055],
+        [-tailSeg * 0.08, H * 0.115], [-tailSeg * 0.30, H * 0.040]
+      ], H * 0.020, bone, 0, tailW * 0.10, -tailSeg * 0.34, { rotY: Math.PI / 2 });
+      spike(tailEnd, H * 0.19, H * 0.024, 0, 0, -tailSeg * 0.56, -Math.PI / 2 + 0.28, 0, 0, plate); // 尾尖刃
+
+      /* 尾脊骨刺：骨色高出轮廓，远看也能区分“尾巴”而不是第三条手臂 */
+      [tailBase, tailMid, tailTip].forEach(function (seg, si) {
+        var sz = si === 0 ? 0.40 : (si === 1 ? 0.50 : 0.48);
+        spike(seg, H * (0.13 - si * 0.02), H * 0.018, 0, tailW * 0.26, -tailSeg * sz, -0.55, 0, 0, bone);
+        spike(seg, H * (0.09 - si * 0.015), H * 0.013, -tailW * 0.24, tailW * 0.20, -tailSeg * (sz + 0.12), -0.5, 0, 0.25, bone);
+        spike(seg, H * (0.09 - si * 0.015), H * 0.013, tailW * 0.24, tailW * 0.20, -tailSeg * (sz + 0.12), -0.5, 0, -0.25, bone);
+      });
+      /* 尾巴背侧骨刺：速攻型两排 + 尾刃，重甲型密集三排 */
       if (fast) {
-        /* 镰刃魔：尾侧两排骨刺 + 尾尖双刃 */
         for (var fs = 0; fs < 2; fs++) {
-          var fz = -tailLen * (0.3 + fs * 0.4);
-          spike(tailMid, H * 0.06, H * 0.01, -H * 0.035, H * 0.04, fz, -0.5, 0, 0.35);
-          spike(tailMid, H * 0.06, H * 0.01, H * 0.035, H * 0.04, fz, -0.5, 0, -0.35);
+          var fz = -tailSeg * (0.3 + fs * 0.4);
+          spike(tailBase, H * 0.08, H * 0.012, -tailW * 0.3, tailW * 0.38, fz, -0.5, 0, 0.35, plate);
+          spike(tailBase, H * 0.08, H * 0.012, tailW * 0.3, tailW * 0.38, fz, -0.5, 0, -0.35, plate);
         }
-        spike(tailTip, H * 0.1, H * 0.012, -H * 0.025, H * 0.03, -tailLen * 0.45, -0.5, 0, 0.4);
-        spike(tailTip, H * 0.1, H * 0.012, H * 0.025, H * 0.03, -tailLen * 0.45, -0.5, 0, -0.4);
+        for (var fm = 0; fm < 3; fm++) {
+          spike(tailMid, H * 0.09, H * 0.012, 0, tailW * 0.32, -tailSeg * (0.15 + fm * 0.3), -0.5, 0, 0, plate);
+        }
+        spike(tailTip, H * 0.12, H * 0.014, -tailW * 0.2, tailW * 0.2, -tailSeg * 0.45, -0.5, 0, 0.4, plate);
+        spike(tailTip, H * 0.12, H * 0.014, tailW * 0.2, tailW * 0.2, -tailSeg * 0.45, -0.5, 0, -0.4, plate);
       } else {
-        /* 重甲（布劳斯）：尾背三排纵向骨刺，每段都有 */
         [tailBase, tailMid, tailTip].forEach(function (seg, si) {
-          var segLen = si === 2 ? tailLen * 0.7 : tailLen;
+          var segLen = si === 2 ? tailSeg * 0.9 : tailSeg;
           var cnt = si === 0 ? 4 : (si === 1 ? 3 : 2);
-          var halfW = (si === 0 ? 0.05 : si === 1 ? 0.04 : 0.025) * H;
-          var spikeH = H * (0.09 - si * 0.015);
+          var halfW = (si === 0 ? 0.05 : si === 1 ? 0.04 : 0.025) * H * bulk;
+          var spikeH = H * (0.11 - si * 0.018);
           for (var k = 0; k < cnt; k++) {
             var kz = -segLen * (0.2 + k * (0.6 / Math.max(1, cnt - 1)));
-            var ky = H * (0.055 - si * 0.005);
-            /* 左右两排 */
-            spike(seg, spikeH, H * 0.012, -halfW, ky, kz, -0.55, 0, 0.3);
-            spike(seg, spikeH, H * 0.012, halfW, ky, kz, -0.55, 0, -0.3);
-            /* 中央一根更高 */
-            spike(seg, spikeH * 1.25, H * 0.014, 0, ky + H * 0.005, kz, -0.5, 0, 0);
+            var ky = tailW * (0.42 - si * 0.04);
+            spike(seg, spikeH, H * 0.012, -halfW, ky, kz, -0.55, 0, 0.3, plate);
+            spike(seg, spikeH, H * 0.012, halfW, ky, kz, -0.55, 0, -0.3, plate);
+            spike(seg, spikeH * 1.25, H * 0.014, 0, ky + H * 0.005, kz, -0.5, 0, 0, plate);
           }
         });
       }
@@ -747,16 +1283,24 @@
     var blendArmsBlade = def.weapon.type === 'blade';
     var clips = [];
     var s = Math.sin, c = Math.cos, PI = Math.PI;
+    /* 平滑相位：a..b 之间从 0 过渡到 1，用于起手 / 挥砍 / 收势分段 */
+    function ease(a, b, x) {
+      var t = Math.min(1, Math.max(0, (x - a) / Math.max(1e-4, b - a)));
+      return t * t * (3 - 2 * t);
+    }
 
     /* 待机 */
     clips.push(buildClip('idle', 2.6, true, {
       hip: { q: function (u) { return [0, 0, s(u * TWO_PI) * 0.02]; } },
       body: { q: function (u) { return [s(u * TWO_PI) * 0.012, s(u * TWO_PI) * 0.02, s(u * TWO_PI) * 0.018]; }, p: function (u) { return [0, s(u * TWO_PI) * 0.1, 0]; } },
       head: { q: function (u) { return [s(u * TWO_PI + 0.8) * 0.05, s(u * TWO_PI * 0.5) * 0.08, 0]; } },
-      shoulderL: { q: function (u) { return [s(u * TWO_PI) * 0.02, 0, s(u * TWO_PI) * 0.03]; } },
-      shoulderR: { q: function (u) { return [s(u * TWO_PI + 0.4) * 0.02, 0, -s(u * TWO_PI) * 0.03]; } },
-      armL: { q: function (u) { return [s(u * TWO_PI) * 0.03, 0, 0.05]; } },
-      armR: { q: function (u) { return [s(u * TWO_PI + 0.5) * 0.03, 0, -0.05]; } },
+      shoulderL: { q: function (u) { return [s(u * TWO_PI) * 0.02 - 0.02, 0, -0.07]; } },
+      shoulderR: { q: function (u) { return [s(u * TWO_PI + 0.4) * 0.02 - 0.02, 0, 0.07]; } },
+      /* 待机时双臂离开躯干、肘部前屈：正面机位能看清手臂与刀的分层 */
+      armL: { q: function (u) { return [s(u * TWO_PI) * 0.03 - 0.10, 0, -0.20]; } },
+      armR: { q: function (u) { return [s(u * TWO_PI + 0.5) * 0.03 - 0.10, 0, 0.20]; } },
+      forearmL: { q: function (u) { return [-0.30 + s(u * TWO_PI + 0.3) * 0.015, 0, -0.04]; } },
+      forearmR: { q: function (u) { return [-0.30 + s(u * TWO_PI + 0.8) * 0.015, 0, 0.04]; } },
       legL: { q: function (u) { return [0, 0, 0.02 + s(u * TWO_PI) * 0.01]; } },
       legR: { q: function (u) { return [0, 0, -0.02 - s(u * TWO_PI) * 0.01]; } }
     }));
@@ -791,15 +1335,63 @@
       forearmR: { q: function (u) { return [-0.7, 0, 0]; } }
     }));
 
-    /* 轻攻击：快速直拳（0.48s 对齐 moves.light 三段时长） */
-    clips.push(buildClip('light', 0.48, false, {
-      body: { q: function (u) { return [0, -0.3 * s(PI * u), 0]; } },
-      hip: { q: function (u) { return [0, 0.12 * s(PI * u), 0]; } },
-      armR: { q: function (u) { return [-1.35 * s(PI * Math.min(1, u / 0.62)), 0.1 * s(PI * u), -0.12]; } },
-      forearmR: { q: function (u) { return [-0.9 + 0.85 * s(PI * Math.min(1, u / 0.62)), 0, 0]; } },
-      armL: { q: function (u) { return [0.3 * s(PI * Math.min(1, u / 0.62)), 0, 0.15]; } },
-      legR: { q: function (u) { return [0.12 * s(PI * u), 0, 0]; } }
-    }));
+    /* 轻攻击（0.48s 对齐 moves.light 三段时长）
+       · 刀刃型：右肩后收蓄力 → 横跨身前的斜斩 → 收势，刀尖拖尾全程可见；
+       · 非刀刃型：保留快速直拳。 */
+    if (blendArmsBlade) {
+      clips.push(buildClip('light', 0.48, false, {
+        hip: {
+          q: function (u) {
+            var w = ease(0, 0.22, u), h = ease(0.22, 0.38, u), r = ease(0.38, 0.86, u);
+            return [0, 0.26 * w - 0.52 * h + 0.26 * r, 0.03 * w - 0.05 * h];
+          }
+        },
+        body: {
+          q: function (u) {
+            var w = ease(0, 0.22, u), h = ease(0.22, 0.38, u), r = ease(0.38, 0.86, u);
+            return [0.06 * w - 0.12 * h, 0.42 * w - 0.95 * h + 0.45 * r, -0.06 * w + 0.12 * h];
+          }
+        },
+        armR: {
+          q: function (u) {
+            var w = ease(0, 0.22, u), h = ease(0.22, 0.38, u), r = ease(0.38, 1.0, u);
+            return [
+              -0.35 * w - 0.55 * h + 0.80 * r,
+              0.85 * w - 1.55 * h + 0.60 * r,
+              1.12 * w - 1.90 * h + 0.68 * r
+            ];
+          }
+        },
+        forearmR: {
+          q: function (u) {
+            var w = ease(0, 0.22, u), h = ease(0.22, 0.38, u), r = ease(0.38, 1.0, u);
+            return [
+              -1.25 * w + 1.12 * h - 0.20 * r,
+              0.55 * w - 1.15 * h + 0.50 * r,
+              0.20 * w - 0.35 * h + 0.10 * r
+            ];
+          }
+        },
+        armL: {
+          q: function (u) {
+            var w = ease(0, 0.22, u), h = ease(0.22, 0.46, u);
+            return [0.30 * w - 0.20 * h, 0, 0.16 + 0.20 * w];
+          }
+        },
+        head: { q: function (u) { return [0.05, -0.18 * ease(0, 0.22, u) + 0.28 * ease(0.22, 0.38, u), 0]; } },
+        legR: { q: function (u) { return [0.14 * s(PI * u), 0, -0.02]; } },
+        legL: { q: function (u) { return [-0.08 * s(PI * u), 0, 0.03]; } }
+      }));
+    } else {
+      clips.push(buildClip('light', 0.48, false, {
+        body: { q: function (u) { return [0, -0.3 * s(PI * u), 0]; } },
+        hip: { q: function (u) { return [0, 0.12 * s(PI * u), 0]; } },
+        armR: { q: function (u) { return [-1.35 * s(PI * Math.min(1, u / 0.62)), 0.1 * s(PI * u), -0.12]; } },
+        forearmR: { q: function (u) { return [-0.9 + 0.85 * s(PI * Math.min(1, u / 0.62)), 0, 0]; } },
+        armL: { q: function (u) { return [0.3 * s(PI * Math.min(1, u / 0.62)), 0, 0.15]; } },
+        legR: { q: function (u) { return [0.12 * s(PI * u), 0, 0]; } }
+      }));
+    }
 
     /* 重攻击：全身后摆蓄力 → 髋部带动躯干扭转下砸 → 明显收招硬直
        时长 1.28s 与 moves.heavy（起手0.50 + 判定0.16 + 收招0.62）严格对齐，
@@ -979,8 +1571,8 @@
       tailBase: { q: function (u) { return [0, s(u * TWO_PI) * 0.16, 0]; } },
       tailMid: { q: function (u) { return [0, s(u * TWO_PI - 0.7) * 0.2, 0]; } },
       tailTip: { q: function (u) { return [0, s(u * TWO_PI - 1.4) * 0.26, 0]; } },
-      foreL: { q: function (u) { return [0.15 + s(u * TWO_PI) * 0.04, 0, 0.12]; } },
-      foreR: { q: function (u) { return [0.15 + s(u * TWO_PI + 0.6) * 0.04, 0, -0.12]; } }
+      foreL: { q: function (u) { return [-0.42 + s(u * TWO_PI) * 0.035, 0, 0.16]; } },
+      foreR: { q: function (u) { return [-0.42 + s(u * TWO_PI + 0.6) * 0.035, 0, -0.16]; } }
     }));
 
     clips.push(buildClip('walk', 1.5, true, {
@@ -1191,23 +1783,66 @@
       /* --- 生物皮肤：斑驳鳞片 --- */
       var kc = makeCanvas(MAP, MAP), kg = kc.getContext('2d');
       kg.scale(mScale, mScale);
-      kg.fillStyle = '#ffffff'; kg.fillRect(0, 0, 512, 512);
-      for (var i = 0; i < 1400; i++) {
-        var v = U.randInt(0, 60);
-        var lum = 200 - v;
-        kg.fillStyle = 'rgba(' + lum + ',' + lum + ',' + lum + ',' + U.rand(0.06, 0.22).toFixed(2) + ')';
+      kg.fillStyle = '#e8e8e8'; kg.fillRect(0, 0, 512, 512);
+      /* 大块深浅斑：先铺生物体表的明暗分区 */
+      for (var blot = 0; blot < 46; blot++) {
+        var bl = U.randInt(72, 168);
+        kg.fillStyle = 'rgba(' + bl + ',' + bl + ',' + bl + ',' + U.rand(0.09, 0.23).toFixed(2) + ')';
         kg.beginPath();
-        kg.ellipse(U.rand(0, 512), U.rand(0, 512), U.rand(6, 22), U.rand(4, 12), Math.random() * 3, 0, Math.PI * 2);
+        kg.ellipse(U.rand(0, 512), U.rand(0, 512), U.rand(28, 92), U.rand(18, 55), Math.random() * 3, 0, Math.PI * 2);
         kg.fill();
       }
-      /* 鳞片网格暗线 */
-      kg.strokeStyle = 'rgba(120,120,120,0.35)'; kg.lineWidth = 1.4;
-      for (var ky = 0; ky < 560; ky += 26) {
-        for (var kx = 0; kx < 560; kx += 26) {
-          kg.beginPath();
-          kg.arc(kx + U.rand(-4, 4), ky + U.rand(-4, 4), U.rand(8, 13), 0, Math.PI * 2);
-          kg.stroke();
+      for (var i = 0; i < 2600; i++) {
+        var v = U.randInt(0, 70);
+        var lum = 210 - v;
+        kg.fillStyle = 'rgba(' + lum + ',' + lum + ',' + lum + ',' + U.rand(0.09, 0.24).toFixed(2) + ')';
+        kg.beginPath();
+        kg.ellipse(U.rand(0, 512), U.rand(0, 512), U.rand(2.5, 9), U.rand(1.8, 5.5), Math.random() * 3, 0, Math.PI * 2);
+        kg.fill();
+      }
+      /* 不规则鳞片：逐行错位、尺寸和朝向随机，避免等距圆点形成“编织篮” */
+      var kRows = 34, kCols = 26;
+      for (var ky = 0; ky < kRows; ky++) {
+        var kyy = (ky + 0.5) * (512 / kRows) + U.rand(-2.5, 2.5);
+        var kOff = (ky % 2) * 0.5;
+        for (var kx = 0; kx < kCols; kx++) {
+          var kxx = (kx + 0.5 + kOff) * (512 / kCols) + U.rand(-4.5, 4.5);
+          var krw = U.rand(6.0, 13.5);
+          var krh = krw * U.rand(0.52, 0.92);
+          var krot = U.rand(-0.55, 0.55);
+          var kbase = U.randInt(146, 208);
+          kg.fillStyle = 'rgba(' + kbase + ',' + kbase + ',' + kbase + ',' + U.rand(0.20, 0.36).toFixed(2) + ')';
+          kg.beginPath(); kg.ellipse(kxx, kyy, krw, krh, krot, 0, Math.PI * 2); kg.fill();
+          /* 下缘压暗、上缘提亮：单颗鳞片就有圆度 */
+          kg.strokeStyle = 'rgba(66,66,66,' + U.rand(0.16, 0.32).toFixed(2) + ')';
+          kg.lineWidth = 0.9;
+          kg.beginPath(); kg.ellipse(kxx, kyy, krw, krh, krot, Math.PI * 0.05, Math.PI * 1.08); kg.stroke();
+          kg.strokeStyle = 'rgba(255,255,255,' + U.rand(0.10, 0.20).toFixed(2) + ')';
+          kg.lineWidth = 0.7;
+          kg.beginPath(); kg.ellipse(kxx, kyy - krh * 0.16, krw * 0.80, krh * 0.68, krot, Math.PI * 1.12, Math.PI * 1.90); kg.stroke();
         }
+      }
+      /* 长皱纹：跨越整片鳞区的深沟，打断规则网格 */
+      for (var kw = 0; kw < 44; kw++) {
+        var kwx = U.rand(0, 512), kwy = U.rand(0, 512);
+        var kang = U.rand(0, Math.PI * 2), klen = U.rand(30, 96);
+        var kmx = kwx + Math.cos(kang) * klen * 0.5 + U.rand(-16, 16);
+        var kmy = kwy + Math.sin(kang) * klen * 0.5 + U.rand(-16, 16);
+        var kex = kwx + Math.cos(kang) * klen, key = kwy + Math.sin(kang) * klen;
+        kg.strokeStyle = 'rgba(70,70,70,' + U.rand(0.14, 0.30).toFixed(2) + ')';
+        kg.lineWidth = U.rand(1.1, 2.6);
+        kg.beginPath(); kg.moveTo(kwx, kwy); kg.quadraticCurveTo(kmx, kmy, kex, key); kg.stroke();
+        kg.strokeStyle = 'rgba(255,255,255,0.09)';
+        kg.lineWidth = 0.9;
+        kg.beginPath(); kg.moveTo(kwx, kwy - 1.4); kg.quadraticCurveTo(kmx, kmy - 1.4, kex, key - 1.4); kg.stroke();
+      }
+      /* 疣粒 / 毛孔：近看才有，远看不形成网格 */
+      for (var kp = 0; kp < 420; kp++) {
+        var kpx = U.rand(0, 512), kpy = U.rand(0, 512), kpr = U.rand(0.9, 2.8);
+        kg.fillStyle = 'rgba(72,72,72,' + U.rand(0.18, 0.36).toFixed(2) + ')';
+        kg.beginPath(); kg.arc(kpx, kpy, kpr, 0, Math.PI * 2); kg.fill();
+        kg.fillStyle = 'rgba(235,235,235,0.14)';
+        kg.beginPath(); kg.arc(kpx - kpr * 0.4, kpy - kpr * 0.4, kpr * 0.45, 0, Math.PI * 2); kg.fill();
       }
       set.map = canvasTexture(kc);
 
@@ -1221,17 +1856,34 @@
       }
       set.roughnessMap = canvasTexture(krc, null, true);
 
-      /* 高度图：鳞片沟壑（凸起的鳞片 + 凹陷的缝）→ 转法线贴图 */
+      /* 高度图：错位鳞片凸起 + 皱纹凹陷，与颜色图同一套不规则布局 → 转法线贴图 */
       var khc = makeCanvas(DET, DET), khg = khc.getContext('2d');
       khg.scale(dScale, dScale);
       khg.fillStyle = '#8a8a8a'; khg.fillRect(0, 0, 256, 256);
-      khg.strokeStyle = '#3a3a3a'; khg.lineWidth = 2.4;
-      for (var by = 0; by < 300; by += 20) {
-        for (var bx = 0; bx < 300; bx += 20) {
-          khg.beginPath(); khg.arc(bx + U.rand(-3, 3), by + U.rand(-3, 3), U.rand(6, 10), 0, Math.PI * 2); khg.stroke();
-          khg.fillStyle = 'rgba(210,210,210,' + U.rand(0.15, 0.4).toFixed(2) + ')';
-          khg.beginPath(); khg.arc(bx + U.rand(-2, 2), by + U.rand(-2, 2), U.rand(3, 5), 0, Math.PI * 2); khg.fill();
+      var hRows = 30, hCols = 22;
+      for (var hy = 0; hy < hRows; hy++) {
+        var hyy = (hy + 0.5) * (256 / hRows) + U.rand(-1.5, 1.5);
+        var hOff = (hy % 2) * 0.5;
+        for (var hx = 0; hx < hCols; hx++) {
+          var hxx = (hx + 0.5 + hOff) * (256 / hCols) + U.rand(-2.2, 2.2);
+          var hrw = U.rand(3.2, 6.8);
+          var hrh = hrw * U.rand(0.52, 0.92);
+          var hrot = U.rand(-0.55, 0.55);
+          khg.fillStyle = 'rgba(' + U.randInt(150, 196) + ',' + U.randInt(150, 196) + ',' + U.randInt(150, 196) + ',0.85)';
+          khg.beginPath(); khg.ellipse(hxx, hyy, hrw, hrh, hrot, 0, Math.PI * 2); khg.fill();
+          khg.strokeStyle = 'rgba(52,52,52,' + U.rand(0.35, 0.6).toFixed(2) + ')';
+          khg.lineWidth = U.rand(0.8, 1.5);
+          khg.beginPath(); khg.ellipse(hxx, hyy, hrw, hrh, hrot, Math.PI * 0.05, Math.PI * 1.08); khg.stroke();
         }
+      }
+      for (var hw = 0; hw < 40; hw++) {
+        var hwx = U.rand(0, 256), hwy = U.rand(0, 256);
+        var hang = U.rand(0, Math.PI * 2), hlen = U.rand(16, 52);
+        khg.strokeStyle = 'rgba(44,44,44,' + U.rand(0.35, 0.65).toFixed(2) + ')';
+        khg.lineWidth = U.rand(1.0, 2.2);
+        khg.beginPath(); khg.moveTo(hwx, hwy);
+        khg.quadraticCurveTo(hwx + Math.cos(hang) * hlen * 0.5 + U.rand(-8, 8), hwy + Math.sin(hang) * hlen * 0.5 + U.rand(-8, 8), hwx + Math.cos(hang) * hlen, hwy + Math.sin(hang) * hlen);
+        khg.stroke();
       }
       set.normalMap = heightToNormal(khc, NS.kaiju || 1.15);
     } else {
@@ -1240,23 +1892,23 @@
       mg.scale(mScale, mScale);
       mg.fillStyle = '#f2f2f2'; mg.fillRect(0, 0, 512, 512);
       /* 面板缝隙 */
-      mg.strokeStyle = 'rgba(70,70,70,0.55)'; mg.lineWidth = 2;
+      mg.strokeStyle = 'rgba(62,62,62,0.72)'; mg.lineWidth = 2.4;
       for (var gy = 0; gy <= 512; gy += 64) { mg.beginPath(); mg.moveTo(0, gy); mg.lineTo(512, gy); mg.stroke(); }
       for (var gx = 0; gx <= 512; gx += 64) { mg.beginPath(); mg.moveTo(gx, 0); mg.lineTo(gx, 512); mg.stroke(); }
-      mg.strokeStyle = 'rgba(90,90,90,0.35)'; mg.lineWidth = 1;
+      mg.strokeStyle = 'rgba(80,80,80,0.5)'; mg.lineWidth = 1.2;
       for (var sy = 32; sy <= 480; sy += 64) {
         for (var sx = 32; sx <= 480; sx += 64) { mg.beginPath(); mg.moveTo(sx, sy); mg.lineTo(sx + 40, sy); mg.stroke(); }
       }
       /* 铆钉 */
-      mg.fillStyle = 'rgba(60,60,60,0.55)';
+      mg.fillStyle = 'rgba(52,52,52,0.7)';
       for (var ny = 0; ny <= 512; ny += 64) {
         for (var nx = 0; nx <= 512; nx += 64) {
-          for (var rv = 0; rv < 3; rv++) { mg.beginPath(); mg.arc(nx + U.rand(8, 56), ny + U.rand(8, 56), 2.0, 0, Math.PI * 2); mg.fill(); }
+          for (var rv = 0; rv < 3; rv++) { mg.beginPath(); mg.arc(nx + U.rand(8, 56), ny + U.rand(8, 56), 2.2, 0, Math.PI * 2); mg.fill(); }
         }
       }
       /* 划痕 / 污渍 */
-      mg.strokeStyle = 'rgba(255,255,255,0.25)'; mg.lineWidth = 1;
-      for (var sc = 0; sc < 90; sc++) {
+      mg.strokeStyle = 'rgba(255,255,255,0.35)'; mg.lineWidth = 1;
+      for (var sc = 0; sc < 140; sc++) {
         var lx = U.rand(0, 512), ly = U.rand(0, 512);
         mg.beginPath(); mg.moveTo(lx, ly); mg.lineTo(lx + U.rand(-24, 24), ly + U.rand(-6, 6)); mg.stroke();
       }
@@ -1353,23 +2005,31 @@
 
   function cityTextures() {
     var tex = {};
-    /* 远景楼宇窗光贴图 */
+    /* 远景楼宇窗光贴图：墙体与窗光分离
+     *   map      —— 墙体基色 + 窗户颜色
+     *   emissive —— 仅窗户发光，避免整栋楼像灯箱一样把夜空刷亮 */
     var c = makeCanvas(128, 256), g = c.getContext('2d');
+    var ce = makeCanvas(128, 256), ge = ce.getContext('2d');
     g.fillStyle = hex(PAL.buildingA); g.fillRect(0, 0, 128, 256);
+    ge.fillStyle = '#000000'; ge.fillRect(0, 0, 128, 256);
     for (var y = 0; y < 256; y += 8) {
       for (var x = 0; x < 128; x += 8) {
         var r = Math.random();
-        if (r < 0.42) {
-          g.fillStyle = r < 0.30 ? hex(PAL.windowWarm) : hex(PAL.windowCold);
-          g.globalAlpha = U.rand(0.35, 1);
+        if (r < 0.22) {
+          var wc = r < 0.16 ? hex(PAL.windowWarm) : hex(PAL.windowCold);
+          var wa = U.rand(0.3, 0.95);
+          g.fillStyle = wc; g.globalAlpha = wa;
           g.fillRect(x + 2, y + 2, 4, 4);
           g.globalAlpha = 1;
-        } else if (r < 0.5) {
+          ge.fillStyle = wc; ge.globalAlpha = wa;
+          ge.fillRect(x + 2, y + 2, 4, 4);
+          ge.globalAlpha = 1;
+        } else if (r < 0.34) {
           g.fillStyle = '#0d1114'; g.fillRect(x + 2, y + 2, 4, 4);
         }
       }
     }
-    tex.window = canvasTexture(c);
+    tex.window = { map: canvasTexture(c), emissive: canvasTexture(ce) };
 
     /* 中景破损楼宇贴图：暗色 + 破损层 */
     var c2 = makeCanvas(128, 128), g2 = c2.getContext('2d');
@@ -1402,7 +2062,7 @@
       for (var seg = 0; seg < 6; seg++) { px += U.rand(-40, 40); py += U.rand(-40, 40); g3.lineTo(px, py); }
       g3.stroke();
     }
-    g3.strokeStyle = 'rgba(160,160,160,0.18)'; g3.lineWidth = 6; g3.setLineDash([28, 30]);
+    g3.strokeStyle = 'rgba(190,188,172,0.34)'; g3.lineWidth = 9; g3.setLineDash([30, 36]);
     g3.beginPath(); g3.moveTo(0, 256); g3.lineTo(512, 256); g3.stroke(); g3.setLineDash([]);
     for (var p = 0; p < 12; p++) {
       g3.fillStyle = 'rgba(120,160,180,' + U.rand(0.04, 0.14).toFixed(2) + ')';
@@ -1528,9 +2188,9 @@
     var geo = new THREE.BoxGeometry(1, 1, 1);
     geo.translate(0, 0.5, 0);                             // 以底面为原点，便于按高度缩放
     var mat = new THREE.MeshStandardMaterial({
-      map: tex.window, emissiveMap: tex.window, emissive: 0xffffff,
+      map: tex.window.map, emissiveMap: tex.window.emissive, emissive: 0xffffff,
       emissiveIntensity: (AC.building && AC.building.emissiveIntensity) || 0.42,
-      color: PAL.buildingB, metalness: 0.55, roughness: 0.62
+      color: 0xb9c2c6, metalness: 0.5, roughness: 0.66
     });
     var inst = new THREE.InstancedMesh(geo, mat, spec.count);
     inst.name = 'farTowers';
@@ -1674,9 +2334,10 @@
     var g = new THREE.Mesh(
       new THREE.PlaneGeometry(CONFIG.arena.width + 120, 260),
       new THREE.MeshStandardMaterial({
-        map: tex.ground, color: 0xffffff,
-        metalness: F.wetMetalness !== undefined ? F.wetMetalness : 0.35,
-        roughness: F.wetRoughness !== undefined ? F.wetRoughness : 0.38
+        map: tex.ground, color: 0x161c20,
+        metalness: F.wetMetalness !== undefined ? F.wetMetalness : 0.22,
+        roughness: F.wetRoughness !== undefined ? F.wetRoughness : 0.56,
+        envMapIntensity: 0.38
       })
     );
     g.rotation.x = -Math.PI / 2;
@@ -1685,48 +2346,66 @@
     g.name = 'ground';
     city.group.add(g);
     city.ground = g;
+
+    /* 积水：低粗糙度圆面借 IBL 反射城市灯光，让地面不再是均匀灰板 */
+    var puddleMat = new THREE.MeshStandardMaterial({
+      color: 0x0c1a20, metalness: 1.0, roughness: 0.035,
+      transparent: true, opacity: 0.72, depthWrite: false, envMapIntensity: 1.45
+    });
+    for (var p = 0; p < 9; p++) {
+      var puddle = new THREE.Mesh(new THREE.CircleGeometry(1, 22), puddleMat);
+      puddle.rotation.x = -Math.PI / 2;
+      puddle.position.set(U.rand(-30, 30), 0.012 + p * 0.0004, U.rand(-16, 10));
+      puddle.scale.set(U.rand(2.2, 6.5), U.rand(1.1, 3.2), 1);
+      puddle.renderOrder = 1;
+      city.group.add(puddle);
+    }
   }
 
   /* --- 路灯 / 路障 / 车辆 / 碎石 --- */
   function buildProps(city, tex) {
     var poleMat = Models._mat(0x1e2428, { metalness: 0.7, roughness: 0.5 });
-    var lampGlow = Models._glowMat(PAL.lampLight, 1.8);
+    var lampGlow = Models._glowMat(PAL.lampLight, 1.15);
     var barrierMat = Models._mat(PAL.barrier, { metalness: 0.2, roughness: 0.7 });
     var carMat = Models._mat(0x1a1f23, { metalness: 0.75, roughness: 0.45 });
     var rubbleMat = Models._mat(0x33383b, { roughness: 0.95, flat: true });
-    for (var i = 0; i < 8; i++) {
-      var x = U.rand(-40, 40), z = U.rand(-14, 12);
-      if (Math.abs(x) < 8) x += 12;                       // 避免正对出生点
+    for (var i = 0; i < 6; i++) {
+      var x = U.rand(19, 42) * (i % 2 ? 1 : -1), z = U.rand(-24, -5); // 灯杆退到场地两侧，不切断双方构图
       var lamp = new THREE.Group();
       lamp.position.set(x, 0, z);
-      var pole = Models._cyl(lamp, 0.32, 0.4, 11, poleMat, 0, 5.5, 0, 8);
-      var head = Models._box(lamp, 2.2, 0.5, 1.0, poleMat, 1.0, 11, 0);
-      var glowHead = Models._box(lamp, 1.6, 0.18, 0.8, lampGlow, 1.0, 10.7, 0);
+      Models._cyl(lamp, 0.32, 0.4, 11, poleMat, 0, 5.5, 0, 8);
+      Models._box(lamp, 2.2, 0.5, 1.0, poleMat, 1.0, 11, 0);
+      Models._box(lamp, 1.6, 0.18, 0.8, lampGlow, 1.0, 10.7, 0);
       city.group.add(lamp);
       city.propsUsed = (city.propsUsed || 0) + 1;
     }
-    for (var b = 0; b < 10; b++) {
-      var bx = U.rand(-40, 40), bz = U.rand(-13, 13);
-      var bar = Models._box(city.group, 3.2, 1.1, 0.6, barrierMat, bx, 0.55, bz, U.rand(-0.4, 0.4));
+    for (var b = 0; b < 7; b++) {
+      var bx = U.rand(14, 40) * (b % 2 ? 1 : -1), bz = U.rand(-16, 0);
+      var bry = U.rand(-0.4, 0.4);
+      var bar = Models._box(city.group, 2.6, 0.9, 0.55, barrierMat, bx, 0.45, bz, bry);
       bar.castShadow = true;
+      /* 白色反光条：让路障不再是一块纯红方砖 */
+      Models._box(city.group, 2.3, 0.14, 0.02, Models._mat(0xd9d4c8, { roughness: 0.6 }),
+        bx + Math.sin(bry) * 0.285, 0.62, bz + Math.cos(bry) * 0.285, bry);
     }
-    for (var v = 0; v < 6; v++) {
-      var vx = U.rand(-42, 42), vz = U.rand(-13, 10);
-      if (Math.abs(vx) < 9) vx += 14;
+    for (var v = 0; v < 5; v++) {
+      var vx = U.rand(-42, 42), vz = U.rand(-17, -4);
+      if (Math.abs(vx) < 11) vx += 15;
       var car = new THREE.Group();
       car.position.set(vx, 0, vz);
       car.rotation.y = U.rand(-0.6, 0.6);
-      Models._box(car, 4.6, 1.5, 9.5, carMat, 0, 0.9, 0);
-      Models._box(car, 4.2, 1.1, 4.6, carMat, 0, 2.1, -0.4);
-      Models._box(car, 0.3, 0.3, 0.3, Models._glowMat(PAL.emberOrange, 1.2), -1.4, 1.1, 4.6);
-      Models._box(car, 0.3, 0.3, 0.3, Models._glowMat(PAL.emberOrange, 1.2), 1.4, 1.1, 4.6);
+      Models._box(car, 4.4, 1.4, 9.0, carMat, 0, 0.85, 0);
+      Models._box(car, 4.0, 1.0, 4.2, carMat, 0, 2.0, -0.4);
+      Models._box(car, 0.3, 0.3, 0.3, Models._glowMat(PAL.emberOrange, 1.2), -1.4, 1.05, 4.4);
+      Models._box(car, 0.3, 0.3, 0.3, Models._glowMat(PAL.emberOrange, 1.2), 1.4, 1.05, 4.4);
       city.group.add(car);
     }
-    for (var r = 0; r < 46; r++) {
-      var rx = U.rand(-46, 46), rz = U.rand(-15, 14);
-      var chunk = Models.createDebrisMesh({ x: U.rand(0.6, 2.6), y: U.rand(0.4, 1.6), z: U.rand(0.6, 2.6) }, 0x2c3134);
-      chunk.position.set(rx, 0.4, rz);
-      chunk.rotation.set(U.rand(-0.4, 0.4), U.rand(0, 6.28), U.rand(-0.4, 0.4));
+    for (var r = 0; r < 24; r++) {
+      var rx = U.rand(16, 46) * (r % 2 ? 1 : -1), rz = U.rand(-18, 1);
+      var chunk = Models.createDebrisMesh({ x: U.rand(0.4, 1.15), y: U.rand(0.2, 0.55), z: U.rand(0.4, 1.15) }, 0x23282b);
+      /* 碎石半埋进路面：抬高只留 1/3 体量，避免战场中出现浮空黑块 */
+      chunk.position.set(rx, 0.08, rz);
+      chunk.rotation.set(U.rand(-0.25, 0.25), U.rand(0, 6.28), U.rand(-0.25, 0.25));
       city.group.add(chunk);
     }
   }
@@ -1770,22 +2449,26 @@
     if (ART.atmosphere.rain) {
       var R = AC.rain || {};
       var rc = R.count || 1800;
-      var rpos = new Float32Array(rc * 3);
+      var rpos = new Float32Array(rc * 6);          // 每滴雨两个顶点 → 线段雨丝
       var area = R.area || { x: 140, z: 120 };
       var hmin = R.heightMin || 2, hmax = R.heightMax || 46;
+      var streak = R.streakLen || 2.2;
+      var rainWind = (R.wind || -3.5) * 0.055;
       for (var rp = 0; rp < rc; rp++) {
-        rpos[rp * 3]     = U.rand(-area.x, area.x);
-        rpos[rp * 3 + 1] = U.rand(hmin, hmax);
-        rpos[rp * 3 + 2] = U.rand(-area.z * 0.5, area.z * 1.2);
+        var rv = rp * 6;
+        var rx0 = U.rand(-area.x, area.x);
+        var ry0 = U.rand(hmin, hmax);
+        var rz0 = U.rand(-area.z * 0.5, area.z * 1.2);
+        rpos[rv] = rx0; rpos[rv + 1] = ry0; rpos[rv + 2] = rz0;
+        rpos[rv + 3] = rx0 + rainWind; rpos[rv + 4] = ry0 - streak; rpos[rv + 5] = rz0 + 0.04;
       }
       var rgeo = new THREE.BufferGeometry();
       rgeo.setAttribute('position', new THREE.BufferAttribute(rpos, 3));
-      var rmat = new THREE.PointsMaterial({
-        color: 0xbfd8ff, size: R.streakLen || 2.2, transparent: true,
-        opacity: R.opacity || 0.42, depthWrite: false, sizeAttenuation: true,
-        map: tex.fog      // 复用软贴图，让雨丝略带横向拉伸感
+      var rmat = new THREE.LineBasicMaterial({
+        color: 0xaacbea, transparent: true,
+        opacity: R.opacity || 0.42, depthWrite: false
       });
-      var rainPts = new THREE.Points(rgeo, rmat);
+      var rainPts = new THREE.LineSegments(rgeo, rmat);
       rainPts.frustumCulled = false;
       city.rain = rainPts;
       city.rainArea = area;
@@ -1866,18 +2549,23 @@
       /* 画质缩放：只更新/绘制前 N 颗雨滴（同一 buffer 复用，不重建几何体、不新建对象） */
       var rscale = this.rainScale != null ? this.rainScale : 1;
       var rverts = this.rain.geometry.attributes.position.count;
-      var rdraw = Math.max(3, Math.floor(rverts * rscale) * 3);
+      var rdraw = Math.max(2, Math.floor(rverts * rscale / 2) * 2);
       if (this.rain.geometry.drawRange.count !== rdraw) this.rain.geometry.drawRange.count = rdraw;
-      for (i = 0; i < rdraw; i += 3) {
+      var streak = Rcfg.streakLen || 2.2;
+      /* rdraw 是顶点数，position.array 是 float 数组：每次跨 6 个 float 处理一对端点 */
+      for (i = 0; i < rdraw * 3; i += 6) {
         rarr[i + 1] -= dt * fall;
+        rarr[i + 4] -= dt * fall;
         rarr[i] += dt * wind;
+        rarr[i + 3] += dt * wind;
         if (rarr[i + 1] < 0.2) {
-          rarr[i + 1] = rmax;
-          rarr[i] = U.rand(-rarea.x, rarea.x);
-          rarr[i + 2] = U.rand(-rarea.z * 0.5, rarea.z * 1.2);
+          var nx = U.rand(-rarea.x, rarea.x);
+          var nz = U.rand(-rarea.z * 0.5, rarea.z * 1.2);
+          rarr[i] = nx; rarr[i + 1] = rmax; rarr[i + 2] = nz;
+          rarr[i + 3] = nx + wind * 0.055; rarr[i + 4] = rmax - streak; rarr[i + 5] = nz + 0.04;
         }
-        if (rarr[i] < -rarea.x) rarr[i] = rarea.x;
-        else if (rarr[i] > rarea.x) rarr[i] = -rarea.x;
+        if (rarr[i] < -rarea.x) { rarr[i] = rarea.x; rarr[i + 3] = rarea.x + wind * 0.055; }
+        else if (rarr[i] > rarea.x) { rarr[i] = -rarea.x; rarr[i + 3] = -rarea.x + wind * 0.055; }
       }
       this.rain.geometry.attributes.position.needsUpdate = true;
     }

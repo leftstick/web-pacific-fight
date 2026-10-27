@@ -281,7 +281,16 @@
     var idx = clampInt(UI.state.select[side], 0, list.length - 1);
     var def = list[idx];
     if (!def) return;
-    setText(D('select-' + side + '-name'), def.name + (def.nameEn ? '  ' + def.nameEn : ''));
+    var nameHost = D('select-' + side + '-name');
+    if (nameHost) {
+      nameHost.innerHTML = '';
+      var cn = document.createElement('span'); cn.className = 'unit-name-cn'; cn.textContent = def.name || '';
+      nameHost.appendChild(cn);
+      if (def.nameEn) {
+        var en = document.createElement('span'); en.className = 'unit-name-en'; en.textContent = def.nameEn;
+        nameHost.appendChild(en);
+      }
+    }
     setText(D('select-' + side + '-tag'), def.tag || '');
     setText(D('select-' + side + '-desc'), def.desc || '');
     buildStats(D('select-' + side + '-stats'), def);
@@ -1013,7 +1022,7 @@
       el.appendChild(num);
       if (damage) {
         var dmg = document.createElement('span'); dmg.className = 'combo-damage';
-        dmg.textContent = String(Math.round(damage));
+        dmg.textContent = 'DMG ' + String(Math.round(damage));
         el.appendChild(dmg);
       }
       el.classList.add('active');
@@ -1045,7 +1054,8 @@
       el.classList.add('active');
       ultTimer = clearT(ultTimer);
       var z = CONFIG.camera && CONFIG.camera.ultimateZoom;
-      var dur = z ? (z.time + z.hold) : 1.8;
+      /* 横幅只覆盖蓄力 + 前两段，终结段和 KO 演出不再被大字遮挡 */
+      var dur = z ? Math.min(1.7, z.time + z.hold * 0.8) : 1.6;
       ultTimer = setTimeout(function () { el.classList.remove('active'); ultTimer = 0; }, dur * 1000);
     },
 

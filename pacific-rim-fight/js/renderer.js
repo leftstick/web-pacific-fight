@@ -39,7 +39,8 @@
     ring: Math.max(6, ((FXCFG.explosion && FXCFG.explosion.pool) || 6) + ((FXCFG.spark && SPARK_TIERS[3] && SPARK_TIERS[3].ring) ? 6 : 0)),
     shield: (FXCFG.shield && FXCFG.shield.pool) || 8,
     explosion: (FXCFG.explosion && FXCFG.explosion.pool) || 6,
-    trail: (FXCFG.trail && FXCFG.trail.maxActive) || 4
+    trail: (FXCFG.trail && FXCFG.trail.maxActive) || 4,
+    arc: (FXCFG.arc && FXCFG.arc.pool) || 8
   };
 
   /* 命中等级参数：1 轻 / 2 重 / 3 必杀；取自 ART_CONFIG.fx.spark.tiers，
@@ -80,7 +81,9 @@
     _glowTex: null, _ringGeo: null,
     _fxGroup: null, _debugGroup: null,
     _sparks: [], _flashes: [], _dusts: [], _rings: [], _fxLights: [],
-    _shields: [], _explosions: [], _trails: [],
+    _shields: [], _explosions: [], _trails: [], _arcs: [],
+    _arcGeo: null,
+    _koFocus: null, _koFocusT: 0,
     _unitHandles: [], _unitLightPool: [], _debris: [],
     _lights: { point: 0, spot: 0 },
     _fxLightCount: 0,
@@ -193,14 +196,14 @@
 
       var light = R._unitLightPool.pop() || null;
       if (!light && R._lights.point < RENDER.maxLights.point) {
-        light = new THREE.PointLight(color, 0, 46, 2);
+        light = new THREE.PointLight(color, 0, 32, 2);
         R.scene.add(light);
         R._lights.point++;
       }
 
       var handle = {
         root: root, faction: faction, color: color, light: light,
-        base: isMecha ? 1.5 : 1.8, offset: 0, phase: U.rand(0, 6.28)
+        base: isMecha ? 7.0 : 9.0, offset: 0, phase: U.rand(0, 6.28)
       };
       if (light) {
         light.color.setHex(color);
@@ -290,8 +293,10 @@
         rg.mesh.position.copy(pos);
         rg.mesh.rotation.set(0, 0, 0);
         rg.mesh.material.color.setHex(PAL.lightning);
-        rg.from = 1.2 + r * 1.6; rg.to = 16 + r * 5;
-        rg.life = rg.maxLife = 0.55 + r * 0.12;
+        /* 轻/重击只留一圈贴身的能量波，必杀才允许扩散到 10m+，避免糊住整个怪兽 */
+        rg.from = 0.8 + r * 0.8;
+        rg.to = (level >= 3 ? 9.5 : 5.0) + r * 2.2;
+        rg.life = rg.maxLife = (level >= 3 ? 0.46 : 0.34) + r * 0.08;
         rg.mesh.material.opacity = 1;
         rg.mesh.visible = true;
         rg.active = true;
@@ -642,6 +647,148 @@
     },
 
     /* =======================================================================
+     * spawnSlashArc(unit, opts)
+     *   攻击瞬间的刀光弧面：独立预建 Mesh 池（XY 平面，面向相机），
+     *   一次挥砍快速放大并淡出。纯渲染层，不参与判定。
+     *   opts = { radius, color, life, tilt, startAngle, spin, forward, z }
+     * ==================================================================== */
+    spawnSlashArc: function (unit, opts) {
+      if (!unit) return;
+      opts = opts || {};
+      var A = FXCFG.arc || {};
+      if (A.enabled === false) return;
+      var slot = R._acquire(R._arcs);
+      if (!slot) return;
+
+      var c = unit.getHitCenter ? unit.getHitCenter() : unit.position;
+      var facing = (opts.facing !== undefined) ? opts.facing : (unit.facing || 1);
+      var h = (unit.def && unit.def.height) || 9.5;
+      var radius = opts.radius || A.radius || h * 0.72;
+      var fwd = (opts.forward !== undefined) ? opts.forward : h * 0.08;
+      var yOff = (opts.y !== undefined) ? opts.y : h * 0.03;
+      var zOff = (opts.z !== undefined) ? opts.z : 1.1;
+      var sign = facing < 0 ? -1 : 1;
+
+      slot.mesh.position.set(c.x + sign * fwd, c.y + yOff, c.z + zOff);
+      slot.mesh.rotation.set(0, facing < 0 ? Math.PI : 0, 0);
+      slot.rotZ = (opts.startAngle !== undefined ? opts.startAngle : 1.0) * sign;
+      slot.spin = (opts.spin !== undefined ? opts.spin : -2.6) * sign;
+      slot.mesh.rotation.z = slot.rotZ;
+      slot.mesh.material.color.setHex(opts.color !== undefined ? opts.color : (A.color !== undefined ? A.color : 0x9fd8ff));
+      slot.from = radius * 0.48;
+      slot.to = radius;
+      slot.opacity = opts.opacity !== undefined ? opts.opacity : (A.opacity !== undefined ? A.opacity : 0.9);
+      slot.life = slot.maxLife = opts.life || A.life || 0.22;
+      var s0 = slot.from;
+      slot.mesh.scale.set(s0, s0, s0);
+      slot.mesh.material.opacity = slot.opacity;
+      slot.mesh.visible = true;
+      slot.active = true;
+    },
+
+    /* =======================================================================
+     * setKOFocus(unit) / clearKOFocus()
+     *   KO 后把镜头缓慢推近败者；clear 后恢复自动框住双方。
+     * ==================================================================== */
+    setKOFocus: function (unit) {
+      var KF = FXCFG.koFocus || {};
+      if (KF.enabled === false) return;
+      R._koFocus = unit || null;
+      R._koFocusT = 0;
+    },
+    clearKOFocus: function () {
+      R._koFocus = null;
+      R._koFocusT = 0;
+    },
+
+    /* =======================================================================
+     * spawnDeathBurst(unit, stage)
+     *   死亡演出分层特效，复用现有粒子池：
+     *   mecha: impact（贯穿火花）→ fall（跪地扬尘/碎片）→ reactor（反应堆殉爆）
+     *   kaiju: impact（蓝血喷溅）→ fall（倒地尘环）→ final（荧光蓝血扩散）
+     * ==================================================================== */
+    spawnDeathBurst: function (unit, stage) {
+      if (!unit) return;
+      var faction = (unit.def && unit.def.faction) || unit.faction || 'kaiju';
+      var c = unit.getHitCenter ? unit.getHitCenter() : unit.position;
+      var h = (unit.def && unit.def.height) || 9.5;
+      var pos = { x: c.x, y: c.y, z: c.z };
+      var ground = { x: unit.position.x, y: 0.6, z: unit.position.z };
+      var feelCfg = (CONFIG.combat && CONFIG.combat.feel) || {};
+      var shakeOn = !(feelCfg.shake && feelCfg.shake.enabled === false);
+
+      if (faction === 'mecha') {
+        if (stage === 'impact') {
+          R.spawnImpact(pos, 2, unit.facing || 1, { combo: 'heavy' });
+          R._pulseFxLight(pos, 0xffb066, 18, 0.35);
+        } else if (stage === 'fall') {
+          R.spawnArmorDebris({ x: pos.x, y: h * 0.35, z: pos.z }, unit);
+          R.spawnShockDust(ground, 1.2);
+          R.spawnExplosion({ x: pos.x, y: h * 0.42, z: pos.z }, 4);
+          if (shakeOn) R.cameraShake(4);
+        } else {
+          /* 反应堆殉爆：胸/双肩/髋三点连锁爆炸 + 白闪 + 大量碎片 */
+          R.spawnExplosion({ x: pos.x, y: h * 0.55, z: pos.z }, 4);
+          R.spawnExplosion({ x: pos.x - h * 0.22, y: h * 0.62, z: pos.z }, 3);
+          R.spawnExplosion({ x: pos.x + h * 0.22, y: h * 0.62, z: pos.z }, 3);
+          R.spawnExplosion({ x: pos.x, y: h * 0.2, z: pos.z }, 3);
+          R.spawnArmorDebris({ x: pos.x, y: h * 0.5, z: pos.z }, unit);
+          R.spawnShockDust(ground, 1.6);
+          var fl = R._acquire(R._flashes);
+          if (fl) {
+            fl.sprite.position.set(pos.x, h * 0.55, pos.z + 1.2);
+            fl.sprite.material.color.setHex(0xfff3d6);
+            fl.sprite.material.opacity = 1;
+            fl.size = 14;
+            fl.life = fl.maxLife = 0.42;
+            fl.sprite.visible = true;
+            fl.active = true;
+          }
+          R._pulseFxLight({ x: pos.x, y: h * 0.55, z: pos.z }, 0xffe0b0, 34, 0.9);
+          if (shakeOn) R.cameraShake(4);
+        }
+        return;
+      }
+
+      /* 开菊兽：荧光蓝血 + 蓝色点光 + 倒地烟尘 */
+      if (stage === 'impact') {
+        R._spawnBloodBurst(pos, 22, FXCFG.kaijuBloodColors || [0x35d5ff, 0x0f8dff]);
+        R._pulseFxLight(pos, 0x35d5ff, 16, 0.4);
+      } else if (stage === 'fall') {
+        R._spawnBloodBurst({ x: pos.x, y: h * 0.3, z: pos.z }, 18, FXCFG.kaijuBloodColors);
+        R.spawnShockDust(ground, 1.5);
+        R._pulseFxLight({ x: pos.x, y: h * 0.2, z: pos.z }, 0x35d5ff, 20, 0.6);
+        if (shakeOn) R.cameraShake(4);
+      } else {
+        R._spawnBloodBurst({ x: pos.x, y: h * 0.18, z: pos.z }, 26, FXCFG.kaijuBloodColors);
+        R.spawnShockDust(ground, 0.8);
+        R._pulseFxLight({ x: pos.x, y: h * 0.15, z: pos.z }, 0x72f0ff, 12, 0.7);
+      }
+    },
+
+    /* 荧光蓝血：低初速 + 重力下坠（复用火花池） */
+    _spawnBloodBurst: function (pos, count, colors) {
+      var p = R._pos(pos);
+      var cols = colors || [0x35d5ff, 0x0f8dff];
+      var pScale = (R._particleScale != null ? R._particleScale : 1);
+      var n = Math.max(1, Math.round((count || 12) * pScale));
+      for (var i = 0; i < n; i++) {
+        var b = R._acquire(R._sparks);
+        if (!b) break;
+        b.vel.set(U.rand(-0.9, 0.9), U.rand(0.4, 1.5), U.rand(-0.6, 0.6)).normalize();
+        b.vel.multiplyScalar(U.rand(4, 10));
+        b.sprite.position.copy(p);
+        b.sprite.position.x += U.rand(-0.6, 0.6);
+        b.sprite.material.color.setHex(cols[i % cols.length]);
+        b.size = U.rand(0.7, 1.5);
+        b.life = b.maxLife = U.rand(0.7, 1.3);
+        b.sprite.material.opacity = 1;
+        b.sprite.visible = true;
+        b.active = true;
+      }
+    },
+
+    /* =======================================================================
      * startTrail(unit, color) / endTrail(unit)
      *   P2 攻击拖尾：追踪 unit 右臂（fistR/forearmR/armR，找不到则用命中中心+前向），
      *   生成一条带状几何体拖尾。纯渲染层，不触碰 unit.position / 物理。
@@ -734,10 +881,25 @@
         span = CAM.framePadding;
       }
 
+      /* KO 特写：只框败者，缓慢推近并降低机位 */
+      var KF = FXCFG.koFocus || {};
+      var focusK = 0;
+      if (R._koFocus && KF.enabled !== false) {
+        var fp = R._targetPos(R._koFocus);
+        if (fp) {
+          R._koFocusT = Math.min(1, (R._koFocusT || 0) + dt * (KF.lerp || 2.4));
+          focusK = R._koFocusT;
+          midX = U.lerp(midX, fp.x, focusK);
+          span = U.lerp(span, CAM.framePadding * 0.42, focusK);
+          topY = fp.y;
+        }
+      }
+
       /* 距离：保证横向可见半宽覆盖 span（竖直线性 fov → 距离换算） */
       var vTan = Math.tan(CAM.fov * DEG * 0.5);
       var need = span / (vTan * Math.max(0.4, cam.aspect));
       var dist = U.clamp(need, CAM.minDistance, CAM.maxDistance);
+      if (focusK > 0) dist = U.lerp(dist, KF.distance || 24, focusK);
 
       /* P2：跟随参数取自 ART_CONFIG.fx.follow（位置/距离/高度 lerp + 死区） */
       var F = (FXCFG.follow) || {};
@@ -751,6 +913,7 @@
       R._dist = U.damp(R._dist, dist, distLerp, dt);
       R._midX = U.damp(R._midX, midX, posLerp, dt);
       var wantY = CAM.height + Math.max(0, topY - CAM.lookHeight) * 0.35;
+      if (focusK > 0) wantY = U.lerp(wantY, KF.height || 3.2, focusK);
       R._camY = U.damp(R._camY, wantY, hLerp, dt);
 
       /* 必杀镜头缩放因子（在 update 中推进） */
@@ -778,11 +941,20 @@
         R._shake = 0;
       }
 
-      /* 注视点：始终看向战场中线（lookHeight + offsetY），保持横向构图 */
-      R._look.set(R._midX, CAM.lookHeight + CAM.offsetY, 0);
+      /* 注视点：通常看向战场中线；KO 特写时下移到败者胸口 */
+      var lookY = CAM.lookHeight + CAM.offsetY;
+      if (focusK > 0) lookY = U.lerp(lookY, KF.lookHeight || 5.2, focusK);
+      R._look.set(R._midX, lookY, 0);
       cam.lookAt(R._look);
       cam.rotation.z += rotZ;
       cam.updateMatrixWorld();
+
+      /* 英雄光跟随镜头与双方中点：从画面左上方斜切，亮面始终朝向观众 */
+      if (R._hero) {
+        R._hero.position.set(R._midX - 12, R._camY + 22, z + 30);
+        R._hero.target.position.set(R._midX + 1, lookY - 1.2, 0);
+        R._hero.target.updateMatrixWorld();
+      }
 
       /* 景深：焦点平面跟随当前机位（主体及其前方全清晰，只虚化远景城市），
          抽样步长按后处理缓冲的真实像素尺寸换算，避免高 DPI 下虚化过强 */
@@ -813,6 +985,7 @@
 
       R._updateUnitLights(R._elapsed);
       R._updateFx(dt);
+      R._updateArcs(dt);
       R._updateTrails(dt);
       R._updateDebris(dt);
 
@@ -870,6 +1043,7 @@
         rings: activeCount(R._rings),
         shields: activeCount(R._shields),
         trails: activeCount(R._trails),
+        arcs: activeCount(R._arcs),
         shake: Math.round((R._shake || 0) * 1000) / 1000
       };
     },
@@ -903,6 +1077,10 @@
         if (R._trails[i].mesh.material) R._trails[i].mesh.material.dispose();
         if (R._trails[i].mesh.geometry) R._trails[i].mesh.geometry.dispose();
       }
+      for (i = 0; i < R._arcs.length; i++) {
+        if (R._arcs[i].mesh.material) R._arcs[i].mesh.material.dispose();
+      }
+      if (R._arcGeo) R._arcGeo.dispose();
       if (R._ringGeo) R._ringGeo.dispose();
       if (R._glowTex) R._glowTex.dispose();
 
@@ -910,8 +1088,9 @@
       if (R.renderer) R.renderer.dispose();
 
       R._sparks.length = 0; R._flashes.length = 0; R._dusts.length = 0; R._rings.length = 0;
-      R._shields.length = 0; R._trails.length = 0;
+      R._shields.length = 0; R._trails.length = 0; R._arcs.length = 0;
       R._unitHandles.length = 0; R._debris.length = 0;
+      R._koFocus = null; R._koFocusT = 0;
       return R;
     },
 
@@ -936,7 +1115,7 @@
     _buildLights: function (scene) {
       var L = AC.light || {};
       /* 半球光 + 环境光：提供基础体积感（过低会让结构不可读，故不再压到极限） */
-      R._hemi = new THREE.HemisphereLight(PAL.skyTop, PAL.groundDiffuse, L.hemiIntensity !== undefined ? L.hemiIntensity : 0.34);
+      R._hemi = new THREE.HemisphereLight(PAL.skyTop, 0x2b2723, L.hemiIntensity !== undefined ? L.hemiIntensity : 0.34);
       R._hemi.position.set(0, 80, 0);
       scene.add(R._hemi);
       R._amb = new THREE.AmbientLight(PAL.skyBottom, L.ambIntensity !== undefined ? L.ambIntensity : 0.10);
@@ -1009,40 +1188,111 @@
         R._lights.spot++;
       }
 
+      /* 正面主光：从镜头侧上方压下来，让装甲/鳞片的体积和贴图细节真正可见 */
+      R._key = new THREE.DirectionalLight(0xffe2bf, L.keyIntensity !== undefined ? L.keyIntensity : 1.55);
+      R._key.position.set(20, 44, 58);
+      R._key.target.position.set(0, 6, 0);
+      R._key.castShadow = false;
+      scene.add(R._key);
+      scene.add(R._key.target);
+
+      /* 反向冷色补光：与主光拉开色温，避免暗部糊成黑块 */
+      R._fill = new THREE.DirectionalLight(PAL.lightning, L.fillIntensity !== undefined ? L.fillIntensity : 0.55);
+      R._fill.position.set(-38, 18, 40);
+      R._fill.target.position.set(0, 6, 0);
+      R._fill.castShadow = false;
+      scene.add(R._fill);
+      scene.add(R._fill.target);
+
       /* 冷色轮廓补光（无阴影，不计入点光预算）：从战场后方打亮单位背缘，强化剪影 */
-      R._rim = new THREE.DirectionalLight(PAL.lightning, L.rimIntensity !== undefined ? L.rimIntensity : 0.42);
+      R._rim = new THREE.DirectionalLight(PAL.lightning, L.rimIntensity !== undefined ? L.rimIntensity : 1.15);
       R._rim.position.set(-14, 46, -70);
       R._rim.target.position.set(0, 6, 0);
       scene.add(R._rim);
       scene.add(R._rim.target);
+
+      /* 英雄光：始终从镜头左上方跟随双方中点，保证 2.5D 机位看到的面永远有细节，
+         与固定主光形成左右夹光；这是夜景里机甲不再渲染成黑色剪影的关键。 */
+      R._hero = new THREE.DirectionalLight(0xfff0dc, L.heroIntensity !== undefined ? L.heroIntensity : 1.65);
+      R._hero.position.set(-12, 24, 40);
+      R._hero.target.position.set(0, 5, 0);
+      R._hero.castShadow = false;
+      scene.add(R._hero);
+      scene.add(R._hero.target);
 
       /* 特效点光池容量 = 剩余点光预算（预留 2 盏给单位专属光） */
       R._fxLightCount = Math.max(1, RENDER.maxLights.point - R._lights.point - 2);
     },
 
     /* =======================================================================
+     * _makeEnvTexture()
+     *   程序化生成「雨夜城市」等距柱状环境图：顶部冷蓝夜空、地平线暖橙城市辉光、
+     *   下方深色湿地面，并叠加楼宇剪影与零星窗光。金属装甲反射的是战场环境，
+     *   而不是 RoomEnvironment 那种灰白摄影棚，体积感和色调统一得多。
+     * ==================================================================== */
+    _makeEnvTexture: function () {
+      var c = document.createElement('canvas');
+      c.width = 1024; c.height = 512;
+      var g = c.getContext('2d');
+      var grad = g.createLinearGradient(0, 0, 0, 512);
+      grad.addColorStop(0.00, '#050d13');
+      grad.addColorStop(0.38, '#0b1b22');
+      grad.addColorStop(0.52, '#314247');
+      grad.addColorStop(0.62, '#1a2427');
+      grad.addColorStop(1.00, '#070a0c');
+      g.fillStyle = grad; g.fillRect(0, 0, 1024, 512);
+
+      /* 地平线暖光（城市灯海） */
+      var warm = g.createRadialGradient(300, 300, 10, 300, 300, 360);
+      warm.addColorStop(0, 'rgba(255, 176, 92, 0.55)');
+      warm.addColorStop(0.45, 'rgba(255, 150, 72, 0.16)');
+      warm.addColorStop(1, 'rgba(255, 150, 72, 0)');
+      g.fillStyle = warm; g.fillRect(0, 0, 1024, 512);
+      var cool = g.createRadialGradient(760, 280, 10, 760, 280, 320);
+      cool.addColorStop(0, 'rgba(111, 208, 255, 0.30)');
+      cool.addColorStop(1, 'rgba(111, 208, 255, 0)');
+      g.fillStyle = cool; g.fillRect(0, 0, 1024, 512);
+
+      /* 楼宇剪影 + 窗光：在金属上形成竖向反射条纹 */
+      for (var i = 0; i < 42; i++) {
+        var w = U.rand(10, 34), h = U.rand(30, 150);
+        var x = U.rand(0, 1024), y = 300 - h;
+        g.fillStyle = 'rgba(6, 12, 15, ' + U.rand(0.35, 0.8).toFixed(2) + ')';
+        g.fillRect(x, y, w, h + 120);
+        for (var ww = 0; ww < 8; ww++) {
+          if (Math.random() > 0.45) continue;
+          g.fillStyle = Math.random() < 0.8 ? 'rgba(255, 196, 116, 0.5)' : 'rgba(170, 220, 255, 0.4)';
+          g.fillRect(x + U.rand(2, w - 4), y + U.rand(4, Math.max(5, h - 4)), U.rand(1, 2.5), U.rand(1, 2.5));
+        }
+      }
+      var tex = new THREE.CanvasTexture(c);
+      tex.mapping = THREE.EquirectangularReflectionMapping;
+      tex.colorSpace = THREE.SRGBColorSpace;
+      return tex;
+    },
+
+    /* =======================================================================
      * _buildEnvironment(scene)
-     *   用 RoomEnvironment + PMREMGenerator 生成 IBL 环境贴图写入 scene.environment。
+     *   用程序化城市环境图 + PMREMGenerator 生成 IBL 环境贴图。
      *   PBR 金属漫反射为 0，外观全靠环境反射；没有 IBL 时金属会渲染成黑色。
-     *   addon 缺失或生成失败时静默跳过（材质仍可用，仅失去环境反射）。
      * ==================================================================== */
     _buildEnvironment: function (scene) {
       if (!RENDER.envMap || !RENDER.envMap.enabled) return;
       var a = ADDONS || {};
-      if (!a.RoomEnvironment || !THREE.PMREMGenerator) {
+      if (!THREE.PMREMGenerator) {
         if (!R._warnedNoEnv) {
           R._warnedNoEnv = true;
-          console.warn('[Renderer] RoomEnvironment/PMREMGenerator 不可用，跳过 IBL 环境贴图。');
+          console.warn('[Renderer] PMREMGenerator 不可用，跳过 IBL 环境贴图。');
         }
         return;
       }
       try {
         var pmrem = new THREE.PMREMGenerator(R.renderer);
-        var room = new a.RoomEnvironment();
-        var rt = pmrem.fromScene(room, RENDER.envMap.blur || 0.04);
+        var envTex = R._makeEnvTexture();
+        var rt = pmrem.fromEquirectangular(envTex);
+        envTex.dispose();
         scene.environment = rt.texture;
         if ('environmentIntensity' in scene) scene.environmentIntensity = RENDER.envMap.intensity;
-        if (room.dispose) room.dispose();
         pmrem.dispose();
         R._envRT = rt;
       } catch (e) {
@@ -1051,6 +1301,38 @@
           console.warn('[Renderer] IBL 环境贴图生成失败，已跳过：', e && e.message);
         }
       }
+    },
+
+    /* 月牙刀光几何：两端收尖、中段最厚，端部顶点压暗形成渐隐。
+       比整圈厚环带更像“挥砍轨迹”，也不会在加法混合下糊成白盘。 */
+    _makeArcGeometry: function () {
+      var segs = 48;
+      var arc = Math.PI * 1.18;
+      var pos = [], col = [], uv = [], idx = [];
+      for (var i = 0; i <= segs; i++) {
+        var t = i / segs;
+        var a = -arc * 0.5 + arc * t;
+        var mid = Math.sin(Math.PI * t);
+        var thick = 0.035 + 0.115 * mid;
+        var outer = 1.0;
+        var inner = outer - thick;
+        pos.push(Math.cos(a) * outer, Math.sin(a) * outer, 0);
+        pos.push(Math.cos(a) * inner, Math.sin(a) * inner, 0);
+        var edge = 0.24 + 0.76 * Math.pow(mid, 0.55);
+        col.push(edge, edge, edge, edge * 0.72, edge * 0.72, edge * 0.72);
+        uv.push(t, 1, t, 0);
+      }
+      for (var s = 0; s < segs; s++) {
+        var a0 = s * 2, b0 = s * 2 + 1, a1 = s * 2 + 2, b1 = s * 2 + 3;
+        idx.push(a0, b0, a1, b0, b1, a1);
+      }
+      var geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+      geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+      geo.setIndex(idx);
+      geo.computeBoundingSphere();
+      return geo;
     },
 
     /* 特效对象池：火花 / 闪光 / 尘雾 / 冲击波环 / 特效点光（一次预建，热身后零分配） */
@@ -1083,7 +1365,8 @@
         group.add(ds);
         R._dusts.push({ sprite: ds, vel: new THREE.Vector3(), life: 0, maxLife: 1, active: false, size: 1 });
       }
-      R._ringGeo = new THREE.RingGeometry(0.42, 1, 48);
+      /* 细冲击波环：环带越窄，扩散时越像能量波而不是糊满屏幕的白盘 */
+      R._ringGeo = new THREE.RingGeometry(0.88, 1, 56);
       for (i = 0; i < FX.ring; i++) {
         var rm = new THREE.MeshBasicMaterial({ color: PAL.lightning, transparent: true, opacity: 0, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
         var rmesh = new THREE.Mesh(R._ringGeo, rm);
@@ -1134,6 +1417,24 @@
         });
       }
       R._trailSeg = seg;
+
+      /* 刀光弧池：共享一个月牙几何体，MeshBasicMaterial 加法混合 */
+      R._arcGeo = R._makeArcGeometry();
+      for (i = 0; i < FX.arc; i++) {
+        var am = new THREE.MeshBasicMaterial({
+          color: 0x9fd8ff, transparent: true, opacity: 0,
+          side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
+          depthWrite: false, fog: false, vertexColors: true
+        });
+        var amesh = new THREE.Mesh(R._arcGeo, am);
+        amesh.visible = false;
+        amesh.frustumCulled = false;
+        group.add(amesh);
+        R._arcs.push({
+          mesh: amesh, life: 0, maxLife: 1, active: false,
+          from: 1, to: 1, opacity: 1, rotZ: 0, spin: 0
+        });
+      }
 
       for (i = 0; i < R._fxLightCount; i++) {
         if (R._lights.point >= RENDER.maxLights.point) break;
@@ -1348,9 +1649,11 @@
       var isMobile = (typeof navigator !== 'undefined' && /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '')) ||
         (typeof global !== 'undefined' && global.ontouchstart !== undefined && area < (1280 * 800));
 
-      if (isMobile) return (aq.mobileForceLow !== false) ? 'low' : 'medium';
-      if (dpr <= (aq.lowDprThreshold || 1.5) && area <= (aq.lowScreenArea || (1280 * 720))) return 'low';
-      if (area <= (1366 * 768)) return 'medium';
+      /* 桌面端不再因为 1080p / dpr=1 被误判成低画质：只有小窗口或低核心数才降档。
+         低画质仍可在暂停菜单手动选择。 */
+      if (isMobile) return (aq.mobileForceLow !== false) ? 'medium' : 'high';
+      var cores = (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 8;
+      if (area <= 1024 * 600 || cores <= 4) return 'medium';
       return 'high';
     },
 
@@ -1542,9 +1845,10 @@
         it.life -= dt;
         if (it.life <= 0) { it.active = false; it.sprite.visible = false; continue; }
         t = it.life / it.maxLife;
-        s = it.size * (1 + (1 - t) * 0.7);
+        s = it.size * (1 + (1 - t) * 0.22);
         it.sprite.scale.set(s, s, s);
-        it.sprite.material.opacity = t;
+        /* 更快衰减：命中瞬间亮一下，不长时间糊住角色 */
+        it.sprite.material.opacity = t * t * t;
       }
 
       for (i = 0; i < R._dusts.length; i++) {
@@ -1571,7 +1875,7 @@
         var e = 1 - (1 - k) * (1 - k);               // easeOutQuad
         s = U.lerp(it.from, it.to, e);
         it.mesh.scale.set(s, s, s);
-        it.mesh.material.opacity = (1 - k) * 0.9;
+        it.mesh.material.opacity = Math.pow(1 - k, 1.7) * 0.42;
       }
 
       /* P2 护盾波纹：径向扩散 + 淡出 */
@@ -1596,16 +1900,38 @@
       }
     },
 
+    /* 刀光弧逐帧推进：快速放大 + 旋转 + 淡出 */
+    _updateArcs: function (dt) {
+      for (var i = 0; i < R._arcs.length; i++) {
+        var it = R._arcs[i];
+        if (!it.active) continue;
+        it.life -= dt;
+        if (it.life <= 0) { it.active = false; it.mesh.visible = false; continue; }
+        var k = 1 - it.life / it.maxLife;
+        var e = 1 - (1 - k) * (1 - k);
+        var s = U.lerp(it.from, it.to, e);
+        it.mesh.scale.set(s, s, s);
+        it.mesh.rotation.z = it.rotZ + it.spin * k;
+        it.mesh.material.opacity = (1 - k) * it.opacity;
+      }
+    },
+
     /* =======================================================================
-     * P2 攻击拖尾：每帧采样 unit 右臂世界坐标 → 推进带状几何体顶点
+     * P2 攻击拖尾：每帧采样刀尖 / 爪尖 / 右臂世界坐标 → 推进带状几何体顶点
      * ==================================================================== */
     _trailHeadPos: function (unit) {
       if (!unit) return R._tmp.set(0, 0, 0);
       var root = unit.root;
-      /* 优先追踪右臂（fistR → forearmR → armR），找不到则用命中中心 + 前向偏移 */
+      /* 优先追踪武器插槽（bladeR → clawTipR → clawR），
+         再回退右拳 / 前臂 / 大臂，最后用命中中心 + 前向偏移 */
       var anchor = null;
       if (root && root.getObjectByName) {
-        anchor = root.getObjectByName('fistR') || root.getObjectByName('forearmR') || root.getObjectByName('armR');
+        anchor = root.getObjectByName('bladeR') ||
+          root.getObjectByName('clawTipR') ||
+          root.getObjectByName('clawR') ||
+          root.getObjectByName('fistR') ||
+          root.getObjectByName('forearmR') ||
+          root.getObjectByName('armR');
       }
       if (anchor) {
         anchor.getWorldPosition(R._tmp);

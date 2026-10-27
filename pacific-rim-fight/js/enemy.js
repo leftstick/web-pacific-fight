@@ -45,6 +45,7 @@
   var BASE_MOVE_SPEED = 9;            // 基础移动速度（世界单位/秒；config 只给相对倍率）
   var KNOCK_MASS_REF = 1000;          // 与 physics.js 击退质量基准一致（无 Ammo 回退公式）
   var MODEL_FORWARD_Y = Math.PI / 2;  // 程序化怪兽模型默认朝 +Z，需 +90° 对齐 yaw(0=+X)
+  var CAMERA_FACING_BIAS = 0.34;       // 侧对镜头时向内转约 20°，露出胸腹/头部（3/4 视角）
   var NORMAL_REACTION = (AICFG.levels.normal && AICFG.levels.normal.reaction) || 0.42;
   var KB_FRICTION_FPS = 60;           // 地面摩擦按 60fps 每帧衰减（与 physics.js 回退一致）
 
@@ -105,6 +106,12 @@
     this.comboDamageBonus = 1;
     this.moveInst = null;
     this.speedScale = 1;
+
+    /* --- P0：受击展示 / KO 锁定 / 死亡演出 --- */
+    this._hitT = 0;
+    this._koLock = false;
+    this._deathT = 0; this._deathDone = false; this._deathEvents = {};
+    this.deathDuration = (C.rules && C.rules.kaijuDeathDuration) || 3.4;
 
     /* --- 运动 --- */
     this.vel = { x: 0, y: 0, z: 0 };
@@ -390,8 +397,15 @@
         return;
       }
 
-      /* 必杀动作期间不被普通受击打断 */
-      var ultLock = this.moveInst && this.moveInst.isUltimate;
+      /* P0：受击展示窗口 —— 即使不在攻击中，也保证 hit 片段完整播完 */
+      var cinematic = !!result.cinematic;
+      this.roarTimer = 0;                                   // 受击打断咆哮，避免 hit 被覆盖
+      this._hitT = Math.max(this._hitT || 0, cinematic ? 0.46 : 0.30);
+      this.state = 'hit';
+
+      /* 必杀动作期间不被普通受击打断；P0 必杀分段（cinematic）例外：
+         三段的每一段都必须看到怪兽中招，因此强制打断并播放 hit。 */
+      var ultLock = this.moveInst && this.moveInst.isUltimate && !cinematic;
 
       if (this.moveInst && !ultLock) {
         if (this.renderer && this.renderer.endTrail) this.renderer.endTrail(this);  // P2：被打断结束拖尾
@@ -399,7 +413,13 @@
         this.state = 'hit';
         this.currentMoveKey = null;
       }
-      if (!ultLock) this.anim('hit', { once: true, clamp: true, fade: 0.1 });
+      if (!ultLock) {
+        this.anim('hit', {
+          once: true, clamp: true, force: true,
+          fade: cinematic ? 0.05 : 0.1,
+          timeScale: cinematic ? 1.35 : 1
+        });
+      }
 
       /* 眩晕：Combat.addStun → setStunned/onStunned 已在本单位内处理 */
       this._stress();
@@ -411,14 +431,72 @@
       this.hp = 0;
       this.state = 'dead';
       this.aiState = 'dead';
+      this._koLock = true;
       this.moveInst = null;
       this.blocking = false;
       this.invuln = false;
       this.stunned = false;
       this.stunTimer = 0;
+      this.dodgeTimer = 0;
+      this._hitT = 0;
       this.knockbackVel = this._knock(result);   // 倒地滑行
+      this._deathT = 0;
+      this._deathDone = false;
+      this._deathEvents = {};
+      this.deathDuration = (C.rules && C.rules.kaijuDeathDuration) || 3.4;
+      if (this.renderer && this.renderer.endTrail) this.renderer.endTrail(this);
       this.anim('death', { once: true, clamp: true, fade: 0.15 });
       if (GAME.Audio) GAME.Audio.play('roar');
+      U.bus.emit('unit:dying', { unit: this });
+      this._emitState();
+    },
+
+    /* 死亡演出时间轴：蓝血喷溅 → 倒地尘环/震屏 → 荧光血扩散 → 完成事件 */
+    _advanceDeath: function (dt) {
+      this._deathT += Math.max(0, dt || 0);
+      var t = this._deathT;
+      var ev = this._deathEvents || (this._deathEvents = {});
+      var rd = this.renderer;
+      if (t >= 0.30 && !ev.impact) {
+        ev.impact = true;
+        if (rd && rd.spawnDeathBurst) rd.spawnDeathBurst(this, 'impact');
+      }
+      if (t >= 1.50 && !ev.fall) {
+        ev.fall = true;
+        if (rd && rd.spawnDeathBurst) rd.spawnDeathBurst(this, 'fall');
+        if (rd && rd.cameraShake) rd.cameraShake(4);
+        if (GAME.Audio) GAME.Audio.play('roar');
+      }
+      if (t >= 2.30 && !ev.final) {
+        ev.final = true;
+        if (rd && rd.spawnDeathBurst) rd.spawnDeathBurst(this, 'final');
+      }
+      if (!this._deathDone && t >= this.deathDuration) {
+        this._deathDone = true;
+        U.bus.emit('unit:death-complete', { unit: this });
+      }
+    },
+
+    /* KO 后胜者：停止 AI / 格挡 / 闪避，回到待机呼吸 */
+    enterKO: function () {
+      this._koLock = true;
+      if (this.dead) return;
+      var midMove = !!this.moveInst;                     // 击杀瞬间仍在出招：保留动作播完
+      this.blocking = false;
+      this.invuln = false;
+      this.stunned = false;
+      this.stunTimer = 0;
+      this.dodgeTimer = 0;
+      this._hitT = 0;
+      this.vel.x = 0; this.vel.y = 0; this.vel.z = 0;
+      if (!midMove) {
+        this.moveInst = null;
+        this.currentMoveKey = null;
+        if (this.renderer && this.renderer.endTrail) this.renderer.endTrail(this);
+        this.state = 'idle';
+        this.aiState = 'combat';
+        this.anim('idle', { fade: 0.18, force: true });
+      }
       this._emitState();
     },
 
@@ -506,6 +584,10 @@
       this.grounded = true;
       this._lastX = this._spawn.x; this._lastZ = this._spawn.z;
       this._leanX = 0; this._leanZ = 0;
+      this._hitT = 0;
+      this._koLock = false;
+      this._deathT = 0; this._deathDone = false; this._deathEvents = {};
+      this.deathDuration = (C.rules && C.rules.kaijuDeathDuration) || 3.4;
       this._debrisStage = 0;
       this._frenzyState = false;
       this.comboHits = 0;
@@ -596,11 +678,26 @@
       var opponent = ctx.opponent || (combat && combat.opponentOf ? combat.opponentOf(this) : null);
       var arena = ctx.arena || CONFIG.arena;
 
-      /* 死亡：播放倒地余韵 + 物理滑行 */
+      /* 死亡：真实时间推进倒地动画 + 分层死亡特效 + 物理滑行 */
       if (this.dead) {
+        var deathDt = (ctx.deathDt !== undefined) ? ctx.deathDt : dt;
+        this._advanceDeath(deathDt);
+        this._integratePhysics(deathDt, arena);
+        this._syncRoot();
+        this._updateMaterials(deathDt);
+        if (this.mixer) this.mixer.update(deathDt);
+        this._applyTorsoInertia(deathDt);
+        return;
+      }
+
+      /* KO 后胜者：冻结 AI / 格挡 / 闪避。若击杀瞬间仍在出招，
+         让动作自然播完（目标已死，不会再产生伤害）。 */
+      if (this._koLock) {
+        if (this.moveInst) this._updateMove(dt, combat, opponent);
         this._integratePhysics(dt, arena);
         this._syncRoot();
         this._updateMaterials(dt);
+        this._updateAnim();
         if (this.mixer) this.mixer.update(dt);
         this._applyTorsoInertia(dt);
         return;
@@ -622,6 +719,12 @@
       if (this.roarCool > 0) this.roarCool -= dt;
       if (this.pressTimer > 0) this.pressTimer -= dt;
       if (this.roarTimer > 0) this.roarTimer -= dt;
+      if (this._hitT > 0) {
+        this._hitT -= dt;
+        if (this._hitT <= 0 && this.state === 'hit' && !this.stunned) {
+          this.state = this.aiState === 'approach' ? 'walk' : 'idle';
+        }
+      }
 
       this._regen(dt);
 
@@ -1099,7 +1202,7 @@
       if (this.root.position && this.root.position.set) {
         this.root.position.set(this.position.x, this.position.y, this.position.z);
       }
-      this.root.rotation.y = MODEL_FORWARD_Y - this.yaw;
+      this.root.rotation.y = MODEL_FORWARD_Y - this.yaw - this.facing * CAMERA_FACING_BIAS;
     },
 
     /* 躯干惯性（纯视觉层，必须在 mixer 之后调用）：
@@ -1151,8 +1254,8 @@
     _updateAnim: function () {
       var clip;
       if (this.dead) clip = 'death';
+      else if (this.stunned || this._hitT > 0) clip = 'hit';
       else if (this.roarTimer > 0) clip = 'roar';
-      else if (this.stunned) clip = 'hit';
       else if (this.dodgeTimer > 0) clip = 'run';
       else if (this.blocking) clip = 'block';
       else if (this.moveInst) clip = (this.moveInst.move && this.moveInst.move.animation) || 'idle';
@@ -1163,7 +1266,7 @@
           default: clip = 'idle';
         }
       }
-      var once = (this.dead || this.stunned);
+      var once = (this.dead || this.stunned || this._hitT > 0);
       /* 狂暴（血量 ≤35%）：只加速待机/移动/咆哮等循环动作的播放速度，
          攻击片段仍与命中时序严格同步，避免动作提前结束导致判定错位。 */
       var frenzy = !this.dead && this.maxHp > 0 && (this.hp / this.maxHp) <= 0.35;

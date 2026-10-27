@@ -78,24 +78,24 @@
   var ART_CONFIG = {
     /* ---------- 单位 PBR 材质默认值 ---------- */
     material: {
-      mecha: { metalness: 0.62, roughness: 0.32,  envMapIntensity: 1.35 },
-      accent:{ metalness: 0.72, roughness: 0.26, envMapIntensity: 1.35 },
-      dark:  { metalness: 0.5,  roughness: 0.45, envMapIntensity: 1.1 },
-      kaijuSkin: { metalness: 0.08, roughness: 0.52 },   /* 生物黏液：略湿反光 */
-      kaijuBelly:{ metalness: 0.05, roughness: 0.55 },
-      kaijuPlate:{ metalness: 0.35, roughness: 0.48 },   /* 甲壳湿润 */
+      mecha: { metalness: 0.40, roughness: 0.38, envMapIntensity: 1.55 },
+      accent:{ metalness: 0.42, roughness: 0.33, envMapIntensity: 1.55 },
+      dark:  { metalness: 0.36, roughness: 0.50, envMapIntensity: 1.15 },
+      kaijuSkin: { metalness: 0.04, roughness: 0.64 },   /* 生物黏液：略湿反光 */
+      kaijuBelly:{ metalness: 0.03, roughness: 0.70 },
+      kaijuPlate:{ metalness: 0.16, roughness: 0.60 },   /* 甲壳湿润 */
       defaultMetalness: 0.55,
       defaultRoughness: 0.4
     },
     /* ---------- 发光 ---------- */
     glow: {
-      mechaCore: 1.15,        // 机甲主反应堆自发光强度
-      mechaWarm: 0.85,        // 机甲暖辅光
-      kaijuCore: 0.95,        // 怪兽主发光
-      kaijuSoft: 0.6,         // 怪兽软发光
+      mechaCore: 0.88,        // 机甲主反应堆自发光强度
+      mechaWarm: 0.62,        // 机甲暖辅光
+      kaijuCore: 0.55,        // 怪兽主发光
+      kaijuSoft: 0.32,         // 怪兽软发光
       pulseSpeed: 1.6,        // 发光呼吸频率（Hz）
       pulseDepth: 0.18,       // 呼吸幅度（0~1）
-      hitFlashIntensity: 2.4  // 受击闪白峰值 emissiveIntensity
+      hitFlashIntensity: 0.22 // 受击闪白峰值 emissiveIntensity（只提亮轮廓，不把整只单位烧成白模）
     },
     /* ---------- 程序化贴图（机甲 / 怪兽） ---------- */
     unitTexture: {
@@ -109,16 +109,16 @@
       mapSize: 1024,
       detailSize: 512,
       anisotropy: 8,          // 各向异性过滤（斜视角装甲不再糊）
-      normalStrength: { mecha: 0.85, kaiju: 1.15 }  // 法线凹凸强度
+      normalStrength: { mecha: 1.15, kaiju: 0.85 }  // 法线凹凸强度（鳞片要细，不能变成大圆斑）
     },
     /* ---------- 城市多层建筑 ---------- */
     building: {
       tiersMin: 2, tiersMax: 4,           // 每层楼段数
       setback: 0.12,                      // 每往上一层缩进比例
-      windowLitChance: 0.42,              // 窗户点亮概率
-      windowWarmRatio: 0.70,              // 暖光窗占比
-      emissiveIntensity: 0.55,            // 远景窗户自发光
-      nearEmissiveIntensity: 0.72,        // 近景窗户自发光（更亮）
+      windowLitChance: 0.13,              // 窗户点亮概率（降低→不再像一堵灯泡墙）
+      windowWarmRatio: 0.82,              // 暖光窗占比
+      emissiveIntensity: 0.12,            // 远景窗户自发光
+      nearEmissiveIntensity: 0.17,        // 近景窗户自发光
       damageTop: true,                    // 顶部破损
       rebarCount: 3,                      // 暴露钢筋数
       windowTexSize: 128                  // 窗户贴图分辨率
@@ -126,13 +126,13 @@
     /* ---------- 雨夜 ---------- */
     rain: {
       enabled: true,
-      count: 1800,             // 雨滴数量
+      count: 2200,             // 雨滴数量
       area: { x: 140, z: 120 },// 雨幕覆盖范围（以战场为中心）
       heightMin: 2, heightMax: 46,
       fallSpeed: 38,           // 下落速度
       wind: -3.5,              // 水平风速（向左）
-      streakLen: 2.2,          // 雨丝长度
-      opacity: 0.42,
+      streakLen: 1.6,          // 雨丝长度
+      opacity: 0.30,
       splashCount: 140,        // 地面溅水点
       splashLife: 0.35
     },
@@ -142,22 +142,24 @@
       groundOpacity: 0.5,      // 地面雾基础不透明度
       groundHeight: 12,        // 地面雾总高度
       driftSpeed: 0.06,
-      wetRoughness: 0.38,      // 雨后地面粗糙度（更光滑=反射更强）
-      wetMetalness: 0.35       // 雨后地面金属度
+      wetRoughness: 0.56,      // 雨后地面粗糙度（保留反射，但不把地面刷成镜面灰板）
+      wetMetalness: 0.22       // 雨后地面金属度
     },
     /* ---------- 灯光 ---------- */
     light: {
       searchlightCount: 3,
       searchlightConeOpacity: 0.07,
       searchlightSweep: 0.9,   // 扫射摆角
-      rimIntensity: 0.42,      // 冷色轮廓补光
-      moonIntensity: 0.75,
-      hemiIntensity: 0.34,
-      ambIntensity: 0.10
+      rimIntensity: 1.45,      // 冷色轮廓补光（勾出机甲/怪兽剪影）
+      keyIntensity: 1.10,      // 正面主光（从镜头侧上方打亮装甲与鳞片）
+      fillIntensity: 0.60,     // 反向冷色补光
+      moonIntensity: 0.85,
+      hemiIntensity: 0.56,
+      ambIntensity: 0.14
     },
     /* ---------- 受击反馈 ---------- */
     hitFlash: {
-      duration: 0.18,          // 闪白持续（秒）
+      duration: 0.08,          // 闪白持续（秒）
       decay: 5.5,              // 衰减系数
       color: 0xffffff          // 闪白色（白）
     },
@@ -171,10 +173,10 @@
       trail: {
         enabled: true,
         segments: 16,           // 拖尾段数（越大越平滑、越费顶点）
-        width: 2.2,             // 头部宽度（世界单位，加宽→等离子链锯感）
-        widthFalloff: 0.2,      // 尾部宽度 = 头部 * 该值
-        life: 0.28,             // 单段拖尾寿命（秒），决定拖尾长度
-        opacity: 0.92,
+        width: 0.80,            // 头部宽度（世界单位，细带更像刀光而不是白色楔形）
+        widthFalloff: 0.12,     // 尾部宽度 = 头部 * 该值
+        life: 0.30,             // 单段拖尾寿命（秒），决定拖尾长度
+        opacity: 0.38,
         /* 各动作拖尾色（机甲冷蓝 / 橙；怪兽青绿） */
         colorLight: 0x6fd0ff,
         colorHeavy: 0xffc86b,
@@ -187,10 +189,18 @@
       spark: {
         pool: 120,              // 池容量
         tiers: {                // level 1 轻 / 2 重 / 3 必杀
-          1: { count: 12, speed: 16, life: 0.34, flashSize: 2.6, flashLife: 0.13, light: 5.0, lightLife: 0.18, ring: false, color: 0xdff1ff },
-          2: { count: 22, speed: 24, life: 0.50, flashSize: 4.4, flashLife: 0.19, light: 16.0, lightLife: 0.30, ring: false, color: 0xff7a1e },
-          3: { count: 38, speed: 32, life: 0.72, flashSize: 7.0, flashLife: 0.28, light: 36.0, lightLife: 0.48, ring: true,  color: 0x9fd8ff }
+          1: { count: 14, speed: 20, life: 0.42, flashSize: 0.7, flashLife: 0.05, light: 0.55, lightLife: 0.08, ring: false, color: 0xdff1ff },
+          2: { count: 24, speed: 26, life: 0.54, flashSize: 0.9, flashLife: 0.06, light: 0.8, lightLife: 0.10, ring: false, color: 0xff7a1e },
+          3: { count: 38, speed: 34, life: 0.76, flashSize: 1.4, flashLife: 0.09, light: 1.5, lightLife: 0.14, ring: true,  color: 0x9fd8ff }
         }
+      },
+      /* --- 刀光弧（攻击瞬间一次性的半透明弧面，独立池） --- */
+      arc: {
+        pool: 8,
+        life: 0.16,             // 单次刀光存在时间
+        radius: 7.2,            // 基准半径（按单位高度再缩放）
+        opacity: 0.24,
+        color: 0x8fd0f0
       },
       /* --- 爆炸（建筑崩塌 / 必杀终结） --- */
       explosion: {
@@ -216,9 +226,9 @@
       /* --- 分级镜头震动 --- */
       shake: {
         tiers: {                // level → 强度（叠加、上限由 camera.shake.max 控制）
-          1: 0.35,              // 轻攻击
-          2: 1.1,               // 重攻击 / 技能
-          3: 2.2,               // 必杀技
+          1: 0.62,              // 轻攻击
+          2: 1.35,              // 重攻击 / 技能
+          3: 2.4,               // 必杀技
           4: 1.8                // 建筑崩塌
         },
         decay: 6.0,             // 衰减速度
@@ -226,27 +236,36 @@
       },
       /* --- 命中粒子组合：不同动作产生不同粒子（对应提示词3） --- */
       hitCombo: {
-        light:    { spark: 5,  impact: 1, blood: 0, slash: 0 },
-        heavy:    { spark: 10, impact: 1, blood: 3, slash: 0 },
-        skill:    { spark: 8,  impact: 1, blood: 2, slash: 2 },
-        ultimate: { spark: 20, impact: 2, blood: 8, slash: 3 },
-        bite:     { spark: 6,  impact: 1, blood: 4, slash: 0 },
-        tail:     { spark: 12, impact: 1, blood: 2, slash: 2 },
-        charge:   { spark: 10, impact: 2, blood: 3, slash: 0 },
-        block:    { spark: 8,  impact: 1, blood: 0, slash: 0 },
-        perfect:  { spark: 12, impact: 2, blood: 0, slash: 3 }
+        light:    { spark: 10, impact: 0, blood: 2, slash: 0 },
+        heavy:    { spark: 16, impact: 1, blood: 5, slash: 0 },
+        skill:    { spark: 14, impact: 1, blood: 3, slash: 0 },
+        ultimate: { spark: 26, impact: 2, blood: 12, slash: 0 },
+        bite:     { spark: 8,  impact: 0, blood: 5, slash: 0 },
+        tail:     { spark: 12, impact: 1, blood: 3, slash: 0 },
+        charge:   { spark: 12, impact: 1, blood: 4, slash: 0 },
+        block:    { spark: 8,  impact: 0, blood: 0, slash: 0 },
+        perfect:  { spark: 12, impact: 1, blood: 0, slash: 0 }
       },
       bloodColors: [0xb02a3a, 0x8a1f5c, 0x6d1b3f],  // 开菊兽血液（红紫）
+      kaijuBloodColors: [0x35d5ff, 0x0f8dff, 0x72f0ff],  // 开菊兽荧光蓝血（死亡演出）
       slashColor: 0x9fd8ff,                          // 刀光轨迹（青蓝）
       dodgeColor: 0x8fe3ff,                          // 闪避残影（浅青）
+      /* --- KO 特写机位（只框败者，缓慢推近） --- */
+      koFocus: {
+        enabled: true,
+        distance: 20,           // 目标距离（留出 11m 怪兽的头顶余量）
+        height: 2.6,            // 相机高度（低机位仰拍）
+        lookHeight: 5.2,        // 注视高度（败者胸口/头部）
+        lerp: 2.4               // 推近速度
+      },
       /* --- 必杀镜头缩放 --- */
       zoom: {
         enabled: true,
-        scale: 0.74,            // 距离乘数（越小越近）
+        scale: 0.92,            // 距离乘数：只轻推，不把 11m 怪兽顶出画面
         inTime: 0.22,           // 拉近时长
         hold: 1.4,              // 保持时长
         outTime: 0.40,          // 拉回时长
-        fovKick: -3             // 触发瞬间 fov 微收（deg），增强冲击
+        fovKick: -1             // 触发瞬间 fov 微收（deg），增强冲击
       },
       /* --- 平滑跟随 --- */
       follow: {
@@ -262,17 +281,17 @@
    * 2. 相机（固定横向 2.5D 视角，自动框住双方单位）
    * ======================================================================== */
   var CAMERA = {
-    fov: 42,
+    fov: 38,
     near: 0.5,
     far: 1200,
     mode: 'side',             // 固定横向视角（不可自由旋转）
-    height: 5.0,              // 相机高度（低于注视点→低角度仰拍，凸显百吨巨型压迫感）
-    lookHeight: 8,            // 注视点高度（抬到机甲胸/头部）
-    baseDistance: 36,         // 基准横向距离（沿 +Z 看向战场）
-    minDistance: 22,
-    maxDistance: 54,
-    maxZ: 26,                 // 相机 z 上限（永远位于战场 +Z 侧）
-    framePadding: 9,          // 自动取景时双方外扩距离（含单位自身体宽，保证双方完整入镜）
+    height: 3.0,              // 相机高度（低于注视点→低角度仰拍，凸显百吨巨型压迫感）
+    lookHeight: 5.8,          // 注视点高度（抬到机甲胸/头部）
+    baseDistance: 25,         // 基准横向距离（沿 +Z 看向战场）
+    minDistance: 21.5,        // 贴身战也保留完整身体（11m 怪兽 + 骨冠不被裁切）
+    maxDistance: 42,
+    maxZ: 12,                 // 相机 z 上限（永远位于战场 +Z 侧，允许必杀推近）
+    framePadding: 7.2,        // 自动取景时双方外扩距离（兼顾单位体宽，避免边缘裁切）
     followLerp: 4.2,          // 相机位置跟随平滑
     distLerp: 2.6,            // 距离缩放平滑
     heightLerp: 3.0,
@@ -283,7 +302,7 @@
       triggerScale: 0.02      // 伤害 → 震动强度换算
     },
     ultimateZoom: {           // 必杀技镜头小幅缩放
-      scale: 0.72,            // 距离乘数（越小越近，必杀更近）
+      scale: 0.92,            // 距离乘数（与 fx.zoom 保持一致，避免裁切角色）
       time: 0.35,
       hold: 1.6
     },
@@ -295,11 +314,11 @@
    * 3. 场景 / 竞技场与物理世界
    * ======================================================================== */
   var ARENA = {
-    width: 96,                // 战场可活动宽度（x ∈ [-48, 48]）
+    width: 80,                // 战场可活动宽度（x ∈ [-40, 40]）
     depth: 30,                // 战场纵深（z ∈ [-15, 15]）
     light2D: true,            // 2.5D 战斗：主要活动在一条横轴上
-    minSeparation: 4.5,       // 双方最小间距（防重叠）
-    spawn: { player: { x: -26, z: 0 }, enemy: { x: 26, z: 0 } },
+    minSeparation: 6.6,       // 双方最小间距（防重叠；仍小于轻攻击 7.0~7.5 的射程）
+    spawn: { player: { x: -13.5, z: 0 }, enemy: { x: 13.5, z: 0 } },
     gravity: -32,             // 重力加速度（世界单位/s²，重型单位手感）
     groundFriction: 0.86,
     airDrag: 0.02
@@ -330,7 +349,7 @@
       hitStop: {
         enabled: true,
         fps: 60,
-        frames: { light: 3, heavy: 6, skill: 8, ultimate: 10 }
+        frames: { light: 5, heavy: 8, skill: 9, ultimate: 12 }
       },
       /* 屏幕震动总开关（低画质可关闭） */
       shake: { enabled: true },
@@ -466,8 +485,17 @@
       debrisLife: 6.0,
       collapseSpeed: 1.0
     },
-    /* 胜负 */
-    rules: { rounds: 1, mode: 'single', timeLimit: 0, slowMoOnKO: true, koSlowMo: 0.28 }
+    /* 胜负 / 死亡演出 */
+    rules: {
+      rounds: 1, mode: 'single', timeLimit: 0, slowMoOnKO: true, koSlowMo: 0.28,
+      koSlowMoDuration: 0.6,          // KO 慢动作持续（真实秒；之后死亡动画按正常速度播完）
+      deathResultDelay: 1.0,          // 死亡演出结束后，再停顿多久弹结算
+      deathFallback: 8.0,             // 死亡完成事件丢失时的兜底（真实秒）
+      playerDeathDuration: 3.2,       // 机甲击毁演出总时长
+      kaijuDeathDuration: 3.4,        // 怪兽倒地演出总时长
+      ultimateStageDamageScale: [0.55, 0.60, 1.85],   // 三段总倍率 3.0，与旧版三段等量
+      ultimateStageKnockbackScale: [0.22, 0.26, 1.0]
+    }
   };
 
   /* ===========================================================================
@@ -507,8 +535,8 @@
       hp: 1000, attack: 1.0, defense: 1.0, speed: 1.05, energyRegen: 1.25,
       stamina: 110, stunResist: 0.0,
       glow: ART.mechaGlow.balanced,          // 胸口反应堆 / 眼部：冷蓝
-      accent: 0xc0392b,                      // 装甲主色：赤红
-      armor: 0x4a5057,
+      accent: 0xd23a2c,                      // 装甲主色：赤红
+      armor: 0x5f6a73,
       weapon: { type: 'blade', name: '等离子链锯', skillName: '链锯连斩' },
       ultimate: { name: '反应堆超载 · 双刃风暴', desc: '反应堆超载，双腕链锯高速连斩，无视格挡。' },
       scale: 1.0,
@@ -524,8 +552,8 @@
       hp: 1360, attack: 1.22, defense: 1.32, speed: 0.84, energyRegen: 1.0,
       stamina: 130, stunResist: 0.25,
       glow: ART.mechaGlow.heavy,             // 橙黄
-      accent: 0x2f6f4f,
-      armor: 0x53585c,
+      accent: 0x3f7d58,
+      armor: 0x636d74,
       weapon: { type: 'cannon', name: '腕部机炮', skillName: '燃烧弹齐射' },
       ultimate: { name: '涡轮超载 · 铁拳镇海', desc: '涡轮增压全力轰击，附带冲击波击退。' },
       scale: 1.12,
@@ -537,15 +565,15 @@
     {
       id: 'kaiju_fast',
       style: 'fast',                         // 速攻型
-      name: '镰刃魔',
-      nameEn: 'SCYTHE FIEND',
+      name: '刀锋头',
+      nameEn: 'BLADEHEAD',
       tag: '速攻型',
-      desc: '两足高速开菊兽，前肢双镰，习惯连续撕咬与突进扑击。',
+      desc: '三级开菊兽，刀刃状颅骨与双镰前肢，擅长高速撕咬和突进扑击。',
       hp: 900, attack: 0.95, defense: 0.88, speed: 1.28, energyRegen: 1.2,
       stamina: 100, stunResist: 0.1,
       glow: ART.kaijuGlow.fast,              // 青绿荧光
-      skin: 0x4b6b52,
-      belly: 0x7d8a6a,
+      skin: 0x40614e,
+      belly: 0x737e60,
       ai: { aggression: 1.35, reaction: 0.30, comboRate: 0.85, guardRate: 0.18, dodgeRate: 0.34, prefer: 'close' },
       ultimate: { name: '狂暴撕咬', desc: '进入狂暴状态，撕咬速度大幅提升。' },
       scale: 1.0,
@@ -554,15 +582,15 @@
     {
       id: 'kaiju_tank',
       style: 'tank',                         // 重甲型
-      name: '铁背山岳',
-      nameEn: 'IRONBACK MOUNTAIN',
+      name: '棱皮龟',
+      nameEn: 'LEATHERBACK',
       tag: '重甲型',
-      desc: '三级重甲开菊兽，背部甲板提供巨大防护，冲撞可摧毁楼宇。',
+      desc: '四级重甲开菊兽，背部厚甲与巨型前肢，冲撞可摧毁整栋楼宇。',
       hp: 1420, attack: 1.18, defense: 1.35, speed: 0.82, energyRegen: 0.95,
       stamina: 125, stunResist: 0.3,
       glow: ART.kaijuGlow.tank,
-      skin: 0x3f4a52,
-      belly: 0x6b7276,
+      skin: 0x4e6069,
+      belly: 0x8f989c,
       ai: { aggression: 0.95, reaction: 0.50, comboRate: 0.55, guardRate: 0.34, dodgeRate: 0.14, prefer: 'mid' },
       ultimate: { name: '甲板冲撞', desc: '全身甲板前倾，长距离冲撞并将敌人撞飞。' },
       scale: 1.24,
@@ -805,16 +833,16 @@
     pixelRatioCap: 1.75,
     antialias: true,
     shadows: { enabled: true, type: 'PCFSoft', mapSize: 2048, radius: 4 },
-    toneMapping: { type: 'ACESFilmic', exposure: 1.12 },
+    toneMapping: { type: 'ACESFilmic', exposure: 1.3 },
     outputColorSpace: 'srgb',
     /* 泛光：降低强度、抬高阈值，让自发光回归“点缀”而非吞掉本体 */
-    bloom: { enabled: true, strength: 0.55, radius: 0.6, threshold: 0.72 },
+    bloom: { enabled: true, strength: 0.5, radius: 0.5, threshold: 0.84 },
     /* IBL 环境贴图：为 PBR 金属提供环境反射（金属漫反射为 0，无环境反射即全黑） */
-    envMap: { enabled: true, intensity: 0.62, blur: 0.04 },
+    envMap: { enabled: true, intensity: 1.15, blur: 0.04 },
     vignette: { enabled: true, offset: 1.05, darkness: 0.62 },
     filmGrain: { enabled: true, intensity: 0.055 },   // 极淡胶片颗粒
-    fog: { enabled: true, near: 40, far: 340, density: 0.0038 },
-    groundFogPass: { enabled: true, height: 7, opacity: 0.55 },
+    fog: { enabled: true, near: 40, far: 340, density: 0.0105 },
+    groundFogPass: { enabled: true, height: 7, opacity: 0.62 },
     /* 景深：仅远景虚化（主体机甲/怪兽与镜头之间保持全清晰）
        focusOffset 相对相机到战场平面的距离，range 为过渡纵深，maxPx 为最大虚化像素 */
     dof: { enabled: true, focusOffset: 26, range: 150, strength: 0.55, maxPx: 3.2 },
@@ -829,12 +857,12 @@
     quality: 'auto',      // 'auto' | 'low' | 'medium' | 'high'
     qualityPresets: {
       high: {
-        bloom: { enabled: true, strength: 0.70, radius: 0.7, threshold: 0.68 },
+        bloom: { enabled: true, strength: 0.52, radius: 0.52, threshold: 0.84 },
         shadows: { enabled: true, type: 'PCFSoft', mapSize: 2048, radius: 4 },
-        vignette: { enabled: true, offset: 1.05, darkness: 0.62 },
-        filmGrain: { enabled: true, intensity: 0.06 },
-        fog: { enabled: true, density: 0.0038 },
-        envMap: { enabled: true, intensity: 0.62 },
+        vignette: { enabled: true, offset: 1.05, darkness: 0.66 },
+        filmGrain: { enabled: true, intensity: 0.05 },
+        fog: { enabled: true, density: 0.0105 },
+        envMap: { enabled: true, intensity: 1.25 },
         resolutionScale: 1.0,
         antialias: true,
         particleScale: 1.0,          // 特效粒子数量乘数
@@ -842,12 +870,12 @@
         dof: { enabled: true }       // 景深：仅桌面高画质开启
       },
       medium: {
-        bloom: { enabled: true, strength: 0.45, radius: 0.5, threshold: 0.78 },
+        bloom: { enabled: true, strength: 0.40, radius: 0.48, threshold: 0.86 },
         shadows: { enabled: true, type: 'PCFSoft', mapSize: 1024, radius: 3 },
-        vignette: { enabled: true, offset: 1.1, darkness: 0.55 },
+        vignette: { enabled: true, offset: 1.1, darkness: 0.6 },
         filmGrain: { enabled: true, intensity: 0.04 },
-        fog: { enabled: true, density: 0.0032 },
-        envMap: { enabled: true, intensity: 0.5 },
+        fog: { enabled: true, density: 0.0092 },
+        envMap: { enabled: true, intensity: 1.0 },
         resolutionScale: 0.85,
         antialias: true,
         particleScale: 0.7,
@@ -857,10 +885,10 @@
       low: {
         bloom: { enabled: false, strength: 0.3, radius: 0.4, threshold: 0.85 },
         shadows: { enabled: false, type: 'Basic', mapSize: 512, radius: 1 },
-        vignette: { enabled: true, offset: 1.2, darkness: 0.5 },
+        vignette: { enabled: true, offset: 1.2, darkness: 0.55 },
         filmGrain: { enabled: false, intensity: 0.03 },
-        fog: { enabled: true, density: 0.0028 },
-        envMap: { enabled: false, intensity: 0.4 },
+        fog: { enabled: true, density: 0.0080 },
+        envMap: { enabled: true, intensity: 0.85 },
         resolutionScale: 0.65,
         antialias: false,
         particleScale: 0.4,

@@ -218,7 +218,7 @@
 
     /* ---------------- 攻击结算：主动方每帧调用 ---------------- */
     /* 在 active 判定帧内检测所有敌对单位，命中则结算一次 */
-    resolveAttack: function (attacker, targets, onHit) {
+    resolveAttack: function (attacker, targets, onHit, opts) {
       var mi = attacker.moveInst;
       if (!mi || mi.phase !== 'active') return null;
       var move = mi.move;
@@ -229,14 +229,22 @@
         if (mi.hitTargets.indexOf(t.id) >= 0) continue;   // 同一动作对同一目标只命中一次
         if (!this.inArc(attacker, t, move)) continue;
         mi.hitTargets.push(t.id);
-        result = this.applyHit(attacker, t, move, mi);
+        result = this.applyHit(attacker, t, move, mi, opts);
         if (onHit) onHit(t, result);
       }
       return result;
     },
 
-    /* 核心伤害计算 + 状态结算 */
-    applyHit: function (attacker, defender, move, moveInst) {
+    /* 核心伤害计算 + 状态结算
+     * opts（可选，P0 必杀分段 / 演出控制）：
+     *   damageScale / knockbackScale  伤害与击退倍率
+     *   lethal                        默认 true；false 时血量下限 1，不会击杀
+     *   cinematic                     强制受击反应、跳过眩晕（用于必杀多段）
+     *   impactLevel                   命中特效等级覆盖
+     *   zoom                          是否触发必杀镜头缩放（默认 true）
+     */
+    applyHit: function (attacker, defender, move, moveInst, opts) {
+      opts = opts || {};
       var facing = this.facingOf(attacker, defender);
       var part = this.partOf(attacker, defender);
       var blocked = false;
@@ -276,6 +284,7 @@
       dmg *= (attacker.comboDamageBonus || 1);          // 连击加成
       dmg /= (defender.def.defense || 1);               // 防御力
       if (attacker.aiDamageScale) dmg *= attacker.aiDamageScale;   // AI 难度伤害系数
+      if (opts.damageScale !== undefined) dmg *= opts.damageScale; // 必杀分段倍率
       if (blocked) dmg *= (1 - C.block.damageReduction);
       if (perfect) {
         var pgCfg = FEEL().perfectGuard || {};
@@ -286,7 +295,8 @@
       stun *= (1 - (defender.def.stunResist || 0));
       stun = Math.round(stun);
 
-      var kb = move.knockback * (blocked ? (1 - C.block.knockbackReduction) : 1);
+      var kbScale = (opts.knockbackScale !== undefined) ? opts.knockbackScale : 1;
+      var kb = move.knockback * (blocked ? (1 - C.block.knockbackReduction) : 1) * kbScale;
       var killed = false;
 
       /* --- 资源扣除（装甲先扛，溢出扣血）--- */
@@ -302,7 +312,11 @@
         }
         if (remaining > 0) {
           defender.hp = Math.max(0, defender.hp - remaining);
-          if (defender.hp <= 0) killed = true;
+          if (defender.hp <= 0) {
+            /* P0：必杀前两段只打空血条，留 1 点血给终结段 */
+            if (opts.lethal === false) defender.hp = 1;
+            else killed = true;
+          }
         }
       }
 
@@ -319,7 +333,21 @@
 
       /* --- 眩晕积累 --- */
       var stunned = false;
-      if (!blocked && stun > 0) stunned = this.addStun(defender, stun);
+      if (!blocked && stun > 0 && !opts.cinematic) stunned = this.addStun(defender, stun);
+
+      /* 接触点：从受击者胸口中心偏向攻击者一侧的表面，火花 / 伤害数字都锚在这里 */
+      var hc = defender.getHitCenter ? defender.getHitCenter() : defender.position;
+      var contact = { x: hc.x, y: hc.y, z: hc.z };
+      if (attacker && attacker.position && defender.position) {
+        var cdx = attacker.position.x - defender.position.x;
+        var cdz = attacker.position.z - defender.position.z;
+        var clen = Math.sqrt(cdx * cdx + cdz * cdz) || 1;
+        var surf = ((defender.def && defender.def.radius) || 3.2) * 0.55;
+        contact.x += (cdx / clen) * surf;
+        contact.z += (cdz / clen) * surf;
+        if (part === 'high') contact.y += 0.8;
+        else if (part === 'low') contact.y -= 1.2;
+      }
 
       var result = {
         damage: Math.round(dmg),
@@ -339,9 +367,11 @@
         /* 顿帧：优先按帧数配置换算；完美格挡额外追加强调顿帧 */
         hitstop: this._resolveHitstop(move, killed, perfect),
         move: move.key,
+        cinematic: !!opts.cinematic,
+        lethal: opts.lethal !== false,
         attacker: attacker,
         defender: defender,
-        position: defender.getHitCenter ? defender.getHitCenter().clone() : defender.position.clone()
+        position: contact
       };
 
       /* --- 击退方向：从攻击者指向受击者 --- */
@@ -374,7 +404,7 @@
       /* --- 反馈：顿帧 / 震动 / 音效 / 特效 --- */
       /* 必杀/击杀：更深慢动作（0.04），强化重击电影感 */
       var isUlt = (move.key === 'ultimate') || killed;
-      this.hitstop(result.hitstop, isUlt ? 0.04 : 0.06);
+      this.hitstop(result.hitstop, isUlt ? 0.055 : 0.07);
       var shakeOn = !(FEEL().shake && FEEL().shake.enabled === false);
       if (shakeOn && this.renderer && this.renderer.cameraShake) {
         /* 分级镜头震动（1 轻 / 2 重·技能 / 3 必杀；完美格挡额外加强） */
@@ -388,15 +418,17 @@
         /* 动作专属粒子组合：perfect > block > 动作 key */
         var comboKey = perfect ? 'perfect'
           : (blocked ? 'block' : (C.moves[move.key] ? move.key : 'light'));
+        var impactLv = (opts.impactLevel !== undefined) ? opts.impactLevel
+          : (blocked ? 1 : (move.key === 'ultimate' ? 3 : (move.key === 'light' ? 2 : 2)));
         this.renderer.spawnImpact(
           result.position,
-          blocked ? 1 : (move.key === 'ultimate' ? 3 : 2),
+          impactLv,
           result.facing,
           { combo: comboKey, perfect: perfect, broken: broken }
         );
       }
       if (global.GAME.Audio) GAME.Audio.play(blocked ? 'block' : 'hit', {});
-      if (move.key === 'ultimate' && this.renderer && this.renderer.zoomPunch) this.renderer.zoomPunch();
+      if (move.key === 'ultimate' && opts.zoom !== false && this.renderer && this.renderer.zoomPunch) this.renderer.zoomPunch();
       if (move.breakGuard && shakeOn && this.renderer && this.renderer.cameraShake) {
         this.renderer.cameraShake(2);                          /* 破防 → 2 级震动 */
       }
