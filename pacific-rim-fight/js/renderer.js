@@ -1922,16 +1922,41 @@
     _trailHeadPos: function (unit) {
       if (!unit) return R._tmp.set(0, 0, 0);
       var root = unit.root;
-      /* 优先追踪武器插槽（bladeR → clawTipR → clawR），
-         再回退右拳 / 前臂 / 大臂，最后用命中中心 + 前向偏移 */
       var anchor = null;
+      /* 成对武器/肢体槽：优先取离镜头更近的一侧。
+         镜头在 +Z 时玩家看到的是机甲左臂；旧逻辑固定取 bladeR/armR，
+         导致拖尾跟在被躯干挡住的远侧手臂上，和可见的挥砍完全脱节。 */
       if (root && root.getObjectByName) {
-        anchor = root.getObjectByName('bladeR') ||
-          root.getObjectByName('clawTipR') ||
-          root.getObjectByName('clawR') ||
-          root.getObjectByName('fistR') ||
-          root.getObjectByName('forearmR') ||
-          root.getObjectByName('armR');
+        if (!R._trailCmp && R.THREE) R._trailCmp = new R.THREE.Vector3();
+        var cam = R.camera;
+        var pairs = [
+          ['bladeL', 'bladeR'],
+          ['clawTipL', 'clawTipR'],
+          ['clawL', 'clawR'],
+          ['fistL', 'fistR'],
+          ['forearmL', 'forearmR'],
+          ['armL', 'armR']
+        ];
+        for (var pi = 0; pi < pairs.length && !anchor; pi++) {
+          var a = root.getObjectByName(pairs[pi][0]);
+          var b = root.getObjectByName(pairs[pi][1]);
+          if (a && b && cam && R._trailCmp) {
+            a.getWorldPosition(R._tmp);
+            b.getWorldPosition(R._trailCmp);
+            anchor = (R._tmp.distanceToSquared(cam.position) <= R._trailCmp.distanceToSquared(cam.position)) ? a : b;
+          } else if (a || b) {
+            anchor = a || b;
+          }
+        }
+        /* 单侧插槽兜底 */
+        if (!anchor) {
+          anchor = root.getObjectByName('bladeR') ||
+            root.getObjectByName('clawTipR') ||
+            root.getObjectByName('clawR') ||
+            root.getObjectByName('fistR') ||
+            root.getObjectByName('forearmR') ||
+            root.getObjectByName('armR');
+        }
       }
       if (anchor) {
         anchor.getWorldPosition(R._tmp);

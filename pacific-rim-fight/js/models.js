@@ -1335,61 +1335,138 @@
       forearmR: { q: function (u) { return [-0.7, 0, 0]; } }
     }));
 
-    /* 轻攻击（0.48s 对齐 moves.light 三段时长）
-       · 刀刃型：右肩后收蓄力 → 横跨身前的斜斩 → 收势，刀尖拖尾全程可见；
-       · 非刀刃型：保留快速直拳。 */
+    /* 轻攻击（0.66s 对齐 moves.light 三段时长）
+       · 镜头在 +Z、机甲面向 +X，画面里能看到的是左臂；因此主挥砍必须由左臂完成，
+         右臂只做反向配重。旧版把 68° 大挥砍给了被躯干挡住的右臂，玩家只能看到刀光。
+       · 刀刃型：左臂从画面左侧高举 → 横跨身前的斜斩 → 收势；
+       · 非刀刃型：同样的左臂横勾拳（机炮型没有可见刀身，靠拳头读出动作）。 */
     if (blendArmsBlade) {
-      clips.push(buildClip('light', 0.48, false, {
+      clips.push(buildClip('light', 0.66, false, {
         hip: {
           q: function (u) {
-            var w = ease(0, 0.22, u), h = ease(0.22, 0.38, u), r = ease(0.38, 0.86, u);
-            return [0, 0.26 * w - 0.52 * h + 0.26 * r, 0.03 * w - 0.05 * h];
+            var w = ease(0, 0.32, u), h = ease(0.32, 0.52, u), r = ease(0.52, 1.0, u);
+            return [0, -0.18 * w + 0.42 * h - 0.24 * r, 0.03 * w - 0.05 * h + 0.02 * r];
           }
         },
         body: {
           q: function (u) {
-            var w = ease(0, 0.22, u), h = ease(0.22, 0.38, u), r = ease(0.38, 0.86, u);
-            return [0.06 * w - 0.12 * h, 0.42 * w - 0.95 * h + 0.45 * r, -0.06 * w + 0.12 * h];
+            var w = ease(0, 0.32, u), h = ease(0.32, 0.52, u), r = ease(0.52, 1.0, u);
+            return [0.05 * w - 0.10 * h + 0.05 * r,
+              -0.40 * w + 0.88 * h - 0.48 * r,
+              -0.05 * w + 0.09 * h - 0.04 * r];
           }
         },
+        /* 主挥砍：左臂 Z 轴从 -1.45rad（指向画面左侧）扫到 +1.30rad（横跨身前指向怪兽） */
+        armL: {
+          q: function (u) {
+            var w = ease(0, 0.34, u), h = ease(0.34, 0.56, u), r = ease(0.56, 1.0, u);
+            return [-0.10 - 0.48 * w + 0.40 * h + 0.08 * r,
+              -0.15 * w + 0.30 * h - 0.15 * r,
+              -0.20 - 1.25 * w + 2.75 * h - 1.50 * r];
+          }
+        },
+        forearmL: {
+          q: function (u) {
+            var w = ease(0, 0.34, u), h = ease(0.34, 0.56, u), r = ease(0.56, 1.0, u);
+            return [-0.30 - 0.55 * w + 0.55 * h,
+              0,
+              -0.04 - 0.14 * w + 0.18 * h - 0.04 * r];
+          }
+        },
+        shoulderL: {
+          q: function (u) {
+            var w = ease(0, 0.34, u), h = ease(0.34, 0.56, u), r = ease(0.56, 1.0, u);
+            return [0, 0, -0.07 - 0.10 * w + 0.22 * h - 0.12 * r];
+          }
+        },
+        /* 远端右臂：反向摆动做配重，动作被躯干遮挡也不影响读数 */
         armR: {
           q: function (u) {
-            var w = ease(0, 0.22, u), h = ease(0.22, 0.38, u), r = ease(0.38, 1.0, u);
-            return [
-              -0.35 * w - 0.55 * h + 0.80 * r,
-              0.85 * w - 1.55 * h + 0.60 * r,
-              1.12 * w - 1.90 * h + 0.68 * r
-            ];
+            var w = ease(0, 0.34, u), h = ease(0.34, 0.56, u), r = ease(0.56, 1.0, u);
+            return [-0.10 + 0.40 * w - 0.10 * h - 0.30 * r,
+              0.12 * w - 0.18 * h + 0.06 * r,
+              0.20 + 0.45 * w - 0.65 * h + 0.20 * r];
           }
         },
         forearmR: {
           q: function (u) {
-            var w = ease(0, 0.22, u), h = ease(0.22, 0.38, u), r = ease(0.38, 1.0, u);
-            return [
-              -1.25 * w + 1.12 * h - 0.20 * r,
-              0.55 * w - 1.15 * h + 0.50 * r,
-              0.20 * w - 0.35 * h + 0.10 * r
-            ];
+            var w = ease(0, 0.34, u), h = ease(0.34, 0.56, u), r = ease(0.56, 1.0, u);
+            return [-0.30 - 0.45 * w + 0.40 * h + 0.05 * r, 0, 0.04];
           }
         },
-        armL: {
+        shoulderR: {
           q: function (u) {
-            var w = ease(0, 0.22, u), h = ease(0.22, 0.46, u);
-            return [0.30 * w - 0.20 * h, 0, 0.16 + 0.20 * w];
+            var w = ease(0, 0.34, u), h = ease(0.34, 0.56, u), r = ease(0.56, 1.0, u);
+            return [0, 0, 0.07 + 0.10 * w - 0.18 * h + 0.08 * r];
           }
         },
-        head: { q: function (u) { return [0.05, -0.18 * ease(0, 0.22, u) + 0.28 * ease(0.22, 0.38, u), 0]; } },
-        legR: { q: function (u) { return [0.14 * s(PI * u), 0, -0.02]; } },
-        legL: { q: function (u) { return [-0.08 * s(PI * u), 0, 0.03]; } }
+        head: {
+          q: function (u) {
+            var w = ease(0, 0.30, u), h = ease(0.30, 0.52, u), r = ease(0.52, 1.0, u);
+            return [0.04, -0.26 * w + 0.40 * h - 0.14 * r, 0];
+          }
+        },
+        legL: { q: function (u) { return [-0.10 * s(PI * u), 0, 0.03]; } },
+        legR: { q: function (u) { return [0.16 * s(PI * u), 0, -0.02]; } },
+        shinL: { q: function (u) { return [0.20 * Math.max(0, s(PI * u)), 0, 0]; } },
+        shinR: { q: function (u) { return [0.12 * Math.max(0, s(PI * u)), 0, 0]; } }
       }));
     } else {
-      clips.push(buildClip('light', 0.48, false, {
-        body: { q: function (u) { return [0, -0.3 * s(PI * u), 0]; } },
-        hip: { q: function (u) { return [0, 0.12 * s(PI * u), 0]; } },
-        armR: { q: function (u) { return [-1.35 * s(PI * Math.min(1, u / 0.62)), 0.1 * s(PI * u), -0.12]; } },
-        forearmR: { q: function (u) { return [-0.9 + 0.85 * s(PI * Math.min(1, u / 0.62)), 0, 0]; } },
-        armL: { q: function (u) { return [0.3 * s(PI * Math.min(1, u / 0.62)), 0, 0.15]; } },
-        legR: { q: function (u) { return [0.12 * s(PI * u), 0, 0]; } }
+      clips.push(buildClip('light', 0.66, false, {
+        hip: {
+          q: function (u) {
+            var w = ease(0, 0.32, u), h = ease(0.32, 0.52, u), r = ease(0.52, 1.0, u);
+            return [0, -0.16 * w + 0.38 * h - 0.22 * r, 0.03 * w - 0.04 * h + 0.01 * r];
+          }
+        },
+        body: {
+          q: function (u) {
+            var w = ease(0, 0.32, u), h = ease(0.32, 0.52, u), r = ease(0.52, 1.0, u);
+            return [0.05 * w - 0.08 * h + 0.03 * r,
+              -0.36 * w + 0.80 * h - 0.44 * r,
+              -0.04 * w + 0.07 * h - 0.03 * r];
+          }
+        },
+        /* 机炮型：左臂横勾拳，肘部在判定帧伸直到位 */
+        armL: {
+          q: function (u) {
+            var w = ease(0, 0.34, u), h = ease(0.34, 0.56, u), r = ease(0.56, 1.0, u);
+            return [-0.10 - 0.42 * w + 0.28 * h + 0.14 * r,
+              -0.10 * w + 0.20 * h - 0.10 * r,
+              -0.20 - 0.85 * w + 2.40 * h - 1.55 * r];
+          }
+        },
+        forearmL: {
+          q: function (u) {
+            var w = ease(0, 0.34, u), h = ease(0.34, 0.56, u), r = ease(0.56, 1.0, u);
+            return [-0.30 - 0.55 * w + 0.70 * h - 0.15 * r, 0, -0.04 - 0.08 * w + 0.10 * h - 0.02 * r];
+          }
+        },
+        shoulderL: {
+          q: function (u) {
+            var w = ease(0, 0.34, u), h = ease(0.34, 0.56, u), r = ease(0.56, 1.0, u);
+            return [0, 0, -0.07 - 0.08 * w + 0.18 * h - 0.10 * r];
+          }
+        },
+        armR: {
+          q: function (u) {
+            var w = ease(0, 0.34, u), h = ease(0.34, 0.56, u), r = ease(0.56, 1.0, u);
+            return [-0.10 + 0.35 * w - 0.35 * h,
+              0.10 * w - 0.14 * h + 0.04 * r,
+              0.20 + 0.25 * w - 0.35 * h + 0.10 * r];
+          }
+        },
+        forearmR: { q: function (u) { return [-0.30 - 0.30 * ease(0, 0.34, u) + 0.25 * ease(0.34, 0.56, u), 0, 0.04]; } },
+        head: {
+          q: function (u) {
+            var w = ease(0, 0.30, u), h = ease(0.30, 0.52, u), r = ease(0.52, 1.0, u);
+            return [0.03, -0.22 * w + 0.34 * h - 0.12 * r, 0];
+          }
+        },
+        legL: { q: function (u) { return [-0.09 * s(PI * u), 0, 0.03]; } },
+        legR: { q: function (u) { return [0.15 * s(PI * u), 0, -0.02]; } },
+        shinL: { q: function (u) { return [0.18 * Math.max(0, s(PI * u)), 0, 0]; } },
+        shinR: { q: function (u) { return [0.10 * Math.max(0, s(PI * u)), 0, 0]; } }
       }));
     }
 

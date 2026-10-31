@@ -616,7 +616,7 @@
       if (key === 'light') {
         renderer.spawnSlashArc(this, {
           color: trailColorFor('light', 'mecha'),
-          radius: h * 0.55, startAngle: 0.95, spin: -3.4, life: 0.20
+          radius: h * 0.48, startAngle: 0.95, spin: -3.4, life: 0.24, opacity: 0.52
         });
       } else if (key === 'heavy') {
         renderer.spawnSlashArc(this, {

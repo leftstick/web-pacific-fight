@@ -173,10 +173,10 @@
       trail: {
         enabled: true,
         segments: 16,           // 拖尾段数（越大越平滑、越费顶点）
-        width: 0.80,            // 头部宽度（世界单位，细带更像刀光而不是白色楔形）
-        widthFalloff: 0.12,     // 尾部宽度 = 头部 * 该值
-        life: 0.30,             // 单段拖尾寿命（秒），决定拖尾长度
-        opacity: 0.38,
+        width: 0.42,            // 头部宽度（世界单位，细带更像刀光而不是白色楔形）
+        widthFalloff: 0.10,     // 尾部宽度 = 头部 * 该值
+        life: 0.24,             // 单段拖尾寿命（秒），决定拖尾长度
+        opacity: 0.22,          // 加法混合 + Bloom 会放大亮度，压暗避免盖住机体轮廓
         /* 各动作拖尾色（机甲冷蓝 / 橙；怪兽青绿） */
         colorLight: 0x6fd0ff,
         colorHeavy: 0xffc86b,
@@ -376,7 +376,7 @@
     /* 动作表：范围 range 以“双方中心距离”计，判定为扇形（角度见 arc） */
     moves: {
       light: {                 // 轻攻击：快、低伤、低硬直，可连段
-        label: '轻攻击', startup: 0.16, active: 0.12, recovery: 0.20,
+        label: '轻攻击', startup: 0.22, active: 0.16, recovery: 0.28,
         damage: 34, range: 7.5, arc: 100, stun: 5, knockback: 2.4,
         staminaCost: 0, energyGain: 6, breakGuard: false, blockable: true,
         sound: 'light', animation: 'light', comboMax: 3, groundShake: 0.35

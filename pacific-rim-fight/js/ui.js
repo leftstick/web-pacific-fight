@@ -165,6 +165,10 @@
     var hp = unit.hp || 0, maxHp = unit.maxHp || 1;
     var frac = U.clamp(hp / maxHp, 0, 1);
 
+    /* 血量数字：旧版只画进度条、从不写数字，换机体后 HUD 会一直停在 1000/900 */
+    var hpText = String(Math.max(0, Math.ceil(hp)));
+    if (cache.hpText !== hpText) { cache.hpText = hpText; setText(D(pfx + '-hp'), hpText); }
+
     /* 装甲条（先于血量承受伤害；maxArmor 为 0 时隐藏） */
     var maxAr = unit.maxArmor || 0;
     var arFill = D(pfx + '-armor-fill');

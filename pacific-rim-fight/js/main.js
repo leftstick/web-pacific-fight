@@ -173,9 +173,10 @@
         });
     },
 
-    fatal: function (msg) {
-      if (global.__GAME_FATAL__) global.__GAME_FATAL__(msg);
-      else console.error(msg);
+    fatal: function (msg, detail) {
+      console.error('[Main]', msg, detail || '');
+      if (global.__GAME_FATAL__) global.__GAME_FATAL__(msg, detail);
+      else if (global.alert) global.alert(msg + (detail ? ('\n' + detail) : ''));
     },
 
     /* --------------------------- 载入全部单位模型 -------------------------- */
@@ -462,53 +463,76 @@
       M.difficulty = difficulty || M.difficulty;
       CONFIG.ai.difficulty = M.difficulty;
 
-      Main.disposeUnits();
+      /* 重入保护：连点“确认出击”时避免用已销毁的单位再建一次战斗 */
+      if (M._startingFight) return;
+      M._startingFight = true;
 
-      var mModel = M.models[mechaDef.id];
-      var kModel = M.models[kaijuDef.id];
-      if (!mModel || !kModel) { Main.fatal('模型尚未加载完成'); return; }
+      try {
+        Main.disposeUnits();
 
-      M.player = new GAME.Player({
-        def: mechaDef, model: mModel, three: M.three,
-        position: { x: CONFIG.arena.spawn.player.x, y: 0, z: CONFIG.arena.spawn.player.z },
-        facing: 1, physics: GAME.Physics, renderer: GAME.Renderer, combat: GAME.Combat
-      });
-      M.enemy = new GAME.Enemy({
-        def: kaijuDef, model: kModel, three: M.three,
-        position: { x: CONFIG.arena.spawn.enemy.x, y: 0, z: CONFIG.arena.spawn.enemy.z },
-        facing: -1, physics: GAME.Physics, renderer: GAME.Renderer, combat: GAME.Combat,
-        difficulty: CONFIG.ai.levels[M.difficulty] || CONFIG.ai.levels.normal
-      });
+        var mModel = M.models[mechaDef.id];
+        var kModel = M.models[kaijuDef.id];
+        if (!mModel || !kModel) {
+          /* 旧版只打一句日志就 return，选择界面看起来像“点了没反应”。
+             这里给出可见错误，并提示刷新重试。 */
+          M.state = 'select';
+          Main.fatal('机体模型尚未加载完成', '缺少：' + (mModel ? '' : mechaDef.name + ' / ') + (kModel ? '' : kaijuDef.name) +
+            '\n请刷新页面重试；若反复出现，请检查网络与 CDN 是否可用。');
+          return;
+        }
 
-      GAME.Renderer.addUnit(M.player.root, 'mecha');
-      GAME.Renderer.addUnit(M.enemy.root, 'kaiju');
+        M.player = new GAME.Player({
+          def: mechaDef, model: mModel, three: M.three,
+          position: { x: CONFIG.arena.spawn.player.x, y: 0, z: CONFIG.arena.spawn.player.z },
+          facing: 1, physics: GAME.Physics, renderer: GAME.Renderer, combat: GAME.Combat
+        });
+        M.enemy = new GAME.Enemy({
+          def: kaijuDef, model: kModel, three: M.three,
+          position: { x: CONFIG.arena.spawn.enemy.x, y: 0, z: CONFIG.arena.spawn.enemy.z },
+          facing: -1, physics: GAME.Physics, renderer: GAME.Renderer, combat: GAME.Combat,
+          difficulty: CONFIG.ai.levels[M.difficulty] || CONFIG.ai.levels.normal
+        });
 
-      if (GAME.Renderer.city && GAME.Renderer.city.reset) GAME.Renderer.city.reset();
+        GAME.Renderer.addUnit(M.player.root, 'mecha');
+        GAME.Renderer.addUnit(M.enemy.root, 'kaiju');
 
-      GAME.Combat.init({
-        physics: GAME.Physics, renderer: GAME.Renderer,
-        units: [M.player, M.enemy],
-        destructibles: (GAME.Renderer.city && GAME.Renderer.city.destructibles) || []
-      });
-      GAME.Combat.playerUnit = M.player;
+        if (GAME.Renderer.city && GAME.Renderer.city.reset) GAME.Renderer.city.reset();
 
-      GAME.UI.player = M.player;
-      GAME.UI.enemy = M.enemy;
+        GAME.Combat.init({
+          physics: GAME.Physics, renderer: GAME.Renderer,
+          units: [M.player, M.enemy],
+          destructibles: (GAME.Renderer.city && GAME.Renderer.city.destructibles) || []
+        });
+        GAME.Combat.playerUnit = M.player;
 
-      M.state = 'fight';
-      M.slowMo = 0;
-      M.koTimer = 0;
-      M.koLoser = null;
-      M.koDeathDone = false;
-      M.koAftermathTimer = 0;
-      M.koFallbackTimer = 0;
-      if (GAME.Renderer.clearKOFocus) GAME.Renderer.clearKOFocus();
-      GAME.UI.hidePause();
-      GAME.UI.showScreen('fight');
-      Main.roundIntro();
+        GAME.UI.player = M.player;
+        GAME.UI.enemy = M.enemy;
 
-      /* 镜头立即对准双方，避免开场跳变 */
-      GAME.Renderer.updateCamera([M.player, M.enemy], 1);
+        M.state = 'fight';
+        M.slowMo = 0;
+        M.koTimer = 0;
+        M.koLoser = null;
+        M.koDeathDone = false;
+        M.koAftermathTimer = 0;
+        M.koFallbackTimer = 0;
+        if (GAME.Renderer.clearKOFocus) GAME.Renderer.clearKOFocus();
+        GAME.UI.hidePause();
+        GAME.UI.showScreen('fight');
+        Main.roundIntro();
+
+        /* 镜头立即对准双方，避免开场跳变 */
+        GAME.Renderer.updateCamera([M.player, M.enemy], 1);
+      } catch (err) {
+        /* 事件总线会吞掉异常，旧版表现就是“点了确认什么也没发生”。
+           这里把失败原因显示到覆盖层，避免静默卡在选择界面。 */
+        console.error('[Main] startFight 失败', err);
+        M.state = 'select';
+        try { Main.disposeUnits(); } catch (e2) { /* 忽略清理阶段的二次异常 */ }
+        Main.fatal('无法开始战斗：' + (err && err.message ? err.message : String(err)),
+          '已停留在选择界面。可尝试重新选择，或刷新页面后重试。');
+      } finally {
+        M._startingFight = false;
+      }
     },
 
     roundIntro: function () {
