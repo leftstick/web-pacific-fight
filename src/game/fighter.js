@@ -239,9 +239,11 @@ export class Fighter {
 
   _backdash(dir) {
     this.state = 'backdash';
-    this.stateTimer = 16;
-    this.invuln = 6;
-    this.vx = dir * this.def.stats.dash * 0.72;
+    this.stateTimer = 18;
+    this.invuln = 3;
+    /* 首帧 8px 位移，其余靠速度衰减，符合帧表 */
+    this.x += dir * 8;
+    this.vx = dir * this.def.stats.dash * 0.5;
     Audio.play('whiff');
   }
 

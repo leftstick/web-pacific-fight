@@ -55,9 +55,11 @@ export class Hud {
     ctx.fillStyle = 'rgba(3, 10, 16, 0.62)';
     ctx.fillRect(0, 0, 480, 56);
 
-    /* ---- 血条 ---- */
-    drawHealth(ctx, 14, 14, 168, 12, ra, this.lagA, '#63e2ff', false);
-    drawHealth(ctx, 298, 14, 168, 12, rb, this.lagB, '#ff6a52', true);
+    /* ---- 血条（≤25% 红色闪烁）---- */
+    const lowA = ra <= 0.25 && (time >> 3) % 2 === 0;
+    const lowB = rb <= 0.25 && (time >> 3) % 2 === 0;
+    drawHealth(ctx, 14, 14, 168, 12, ra, this.lagA, lowA ? '#ff4a3c' : '#63e2ff', false);
+    drawHealth(ctx, 298, 14, 168, 12, rb, this.lagB, lowB ? '#ffdd55' : '#ff6a52', true);
 
     /* 防御槽（细线） */
     rect(ctx, 14, 29, 168, 3, '#0a141c');

@@ -8,9 +8,9 @@ export const VIEW_H = 270;
 export const GROUND_Y = 232;      // 地面线（角色的脚底 y）
 
 /** 舞台可用宽度（角色活动范围，比视口宽，用于镜头横向推移） */
-export const ARENA_W = 660;
-export const ARENA_MIN_X = 46;
-export const ARENA_MAX_X = ARENA_W - 46;
+export const ARENA_W = 960;
+export const ARENA_MIN_X = 24;
+export const ARENA_MAX_X = ARENA_W - 24;
 
 /**
  * 让 canvas 以整数倍铺满视口并居中；返回当前缩放倍率。

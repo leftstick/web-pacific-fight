@@ -69,6 +69,11 @@ export function groundNeutral(f, c, opp) {
   }
 }
 
+/** 超必杀可用：能量满，或血量 ≤25% 的「背水一击」 */
+function canSuper(f, m) {
+  return !!m.super && (f.meter >= 100 || f.hp <= f.maxHp * 0.25);
+}
+
 /** 攻击输入判定（优先级：二阶段必杀 > 超必杀 > 必杀 > 重击/投技 > 轻击） */
 export function tryAttack(f, c, fwd, airborne) {
   const m = f.def.moves;
@@ -79,20 +84,30 @@ export function tryAttack(f, c, fwd, airborne) {
     f.startMove('special2');
     return true;
   }
-  if (c.super && m.super && f.meter >= m.super.meterCost) {
+  if (c.super && m.super && canSuper(f, m)) {
     f._use('super');
+    /* 背水一击：不足 100 时临时补满，由 startMove 正常扣除并归零 */
+    if (f.meter < m.super.meterCost) f.meter = m.super.meterCost;
     f.startMove('super');
     return true;
   }
   if (c.special && m.special && f.meter >= (m.special.meterCost || 0)) {
     f._use('special');
     /* 蹲 + 必杀键 = 超必杀（手柄/键盘无独立超必杀键时同样可用） */
-    if (down && m.super && f.meter >= m.super.meterCost) f.startMove('super');
-    else f.startMove('special');
+    if (down && m.super && canSuper(f, m)) {
+      if (f.meter < m.super.meterCost) f.meter = m.super.meterCost;
+      f.startMove('super');
+    } else {
+      f.startMove('special');
+    }
     return true;
   }
   if (c.heavy && m.heavy) {
     f._use('heavy');
+    /* 蹲 + 重击 = 蹲重（下段击倒） */
+    if (!airborne && down && m.crouchHeavy) { f.startMove('crouchHeavy'); return true; }
+    /* 空中重击 = 跳重 */
+    if (airborne && m.airHeavy) { f.startMove('airHeavy'); return true; }
     /* 前 + 重击 = 投技（近身不可防） */
     if (!airborne && fwd && m.throw) { f.startMove('throw'); return true; }
     f.startMove('heavy');
@@ -125,6 +140,8 @@ export function startMove(f, key) {
   f.spawned = false;
   f.mechDone = false;
   f.armorLeft = mv.armor || 0;
+  /* 超必杀起手无敌（表内设定 8f） */
+  if (mv.invuln) f.invuln = Math.max(f.invuln, mv.invuln);
   f.blocking = false;
   f.vx *= 0.25;
   if (mv.dash) f.vx = f.facing * mv.dash;
@@ -143,14 +160,23 @@ export function attackState(f, c) {
 
   /* 取消窗口：命中后可取消到更高阶招式 */
   if (f.hitConfirmed && f.grounded) {
-    const chain = { light: ['heavy', 'special', 'super'], low: ['special', 'super'], heavy: ['special', 'super'] };
+    const chain = {
+      light: ['heavy', 'special', 'super'],
+      low: ['crouchHeavy', 'special', 'super'],
+      heavy: ['special', 'super'],
+      crouchHeavy: ['super']
+    };
     const allowed = chain[f.moveKey] || [];
-    if (allowed.includes('heavy') && c.heavy) { f._use('heavy'); f.startMove('heavy'); return; }
+    if (allowed.includes('heavy') && c.heavy && !c.down) { f._use('heavy'); f.startMove('heavy'); return; }
+    if (allowed.includes('crouchHeavy') && c.heavy && c.down && f.def.moves.crouchHeavy) {
+      f._use('heavy'); f.startMove('crouchHeavy'); return;
+    }
     if (allowed.includes('special') && c.special && f.def.moves.special) {
       const m = f.def.moves.special;
       if (f.meter >= (m.meterCost || 0)) { f._use('special'); f.startMove('special'); return; }
     }
-    if (allowed.includes('super') && c.super && f.def.moves.super && f.meter >= 100) {
+    if (allowed.includes('super') && c.super && canSuper(f, f.def.moves)) {
+      if (f.meter < 100) f.meter = 100;
       f._use('super'); f.startMove('super'); return;
     }
   }

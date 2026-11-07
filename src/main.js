@@ -46,6 +46,13 @@ let run = null;          // { mode, diff, hero, monsterIndex, wins }
 let match = null;
 let result = null;       // 结算信息
 
+/* 调试叠层：F1 判定框，` 键 FPS */
+const debug = { hitbox: false, fps: false, frames: 0, fpsAt: 0, fpsVal: 60 };
+window.addEventListener('keydown', (ev) => {
+  if (ev.code === 'F1') { ev.preventDefault(); debug.hitbox = !debug.hitbox; }
+  else if (ev.code === 'Backquote') { ev.preventDefault(); debug.fps = !debug.fps; }
+});
+
 /* ---- 页面壳：全屏 / 横屏遮罩 -------------------------------------------- */
 
 const fullBtn = document.getElementById('btn-fullscreen');
@@ -96,8 +103,22 @@ function clearCombatInput() {
 
 /* ---- 流程 ---------------------------------------------------------------- */
 
+/* 街机模式：前 5 关从 1–9 号怪兽随机不重复抽取，第 6 关固定陨核巨像 */
+function buildArcadeList() {
+  const pool = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return pool.slice(0, 5).concat([9]);
+}
+
 function chooseMode(mode) {
-  run = { mode, diff: state.diff, hero: HEROES[0], monsterIndex: 0, wins: 0 };
+  run = {
+    mode, diff: state.diff, hero: HEROES[0],
+    monsterIndex: 0, stageIndex: 0, wins: 0,
+    arcadeList: mode === 'arcade' ? buildArcadeList() : null
+  };
   setState('charSelect');
 }
 
@@ -107,7 +128,8 @@ function chooseHero(i) {
     state.monSel = 0;
     setState('monsterSelect');
   } else {
-    startFight(0);
+    run.stageIndex = 0;
+    startFight(run.mode === 'arcade' ? run.arcadeList[0] : 0);
   }
 }
 
@@ -116,7 +138,8 @@ function startFight(monsterIndex) {
   run.wins = 0;
   result = null;
   const monster = MONSTERS[monsterIndex % MONSTERS.length];
-  const stage = STAGES[monsterIndex % STAGES.length];
+  const stageIdx = run.mode === 'arcade' ? run.stageIndex : monsterIndex;
+  const stage = STAGES[stageIdx % STAGES.length];
   match = new Match({
     hero: run.hero,
     monster,
@@ -146,24 +169,26 @@ function buildResult() {
   const win = match.matchWinner === match.a;
   const arcade = run.mode === 'arcade';
   const training = run.mode === 'training';
+  const total = arcade && run.arcadeList ? run.arcadeList.length : 0;
+  const cleared = arcade ? (win ? run.stageIndex + 1 : run.stageIndex) : 0;
   const lines = [
     '回合比分  ' + match.wins[0] + ' : ' + match.wins[1],
     '难度  ' + DIFF_NAMES[run.diff]
   ];
-  if (arcade) lines.push('已击败  ' + (win ? run.monsterIndex + 1 : run.monsterIndex) + ' / ' + MONSTERS.length);
+  if (arcade) lines.push('街机关卡  ' + cleared + ' / ' + total);
   if (training) lines.push('训练模式 · 无限时间');
 
   let prompt = '按 J / 点击屏幕 返回标题';
-  if (arcade && win && run.monsterIndex < MONSTERS.length - 1) {
+  if (arcade && win && run.stageIndex < total - 1) {
     prompt = '按 J / 点击屏幕 挑战下一只';
   }
-  if (arcade && win && run.monsterIndex === MONSTERS.length - 1) {
-    lines.unshift('全部 10 只怪兽已击破');
+  if (arcade && win && run.stageIndex === total - 1) {
+    lines.unshift('陨核巨像已被击破 · 街机通关');
   }
 
   result = {
     win, lines, prompt,
-    stageIndex: run.monsterIndex % STAGES.length,
+    stageIndex: run.stageIndex % STAGES.length,
     arcade, training
   };
   setState('result');
@@ -171,8 +196,9 @@ function buildResult() {
 
 function resultConfirm() {
   if (!result) { toTitle(); return; }
-  if (result.arcade && result.win && run.monsterIndex < MONSTERS.length - 1) {
-    startFight(run.monsterIndex + 1);
+  if (result.arcade && result.win && run.stageIndex < run.arcadeList.length - 1) {
+    run.stageIndex++;
+    startFight(run.arcadeList[run.stageIndex]);
     return;
   }
   toTitle();
@@ -386,6 +412,16 @@ function render() {
       drawResult(ctx, state.time, result || { win: false, lines: [] });
       break;
   }
+
+  /* 调试叠层 */
+  if (debug.hitbox && match && (state.name === 'fight' || state.name === 'pause')) {
+    match.drawDebug(ctx);
+  }
+  if (debug.fps) {
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(4, VIEW_H - 18, 118, 14);
+    cjk(ctx, 'FPS ' + debug.fpsVal + '  逻辑 60Hz', 8, VIEW_H - 15, { size: 8, color: '#8cf0a8' });
+  }
 }
 
 /* ---- 固定 60Hz 主循环 ---------------------------------------------------- */
@@ -395,7 +431,7 @@ let acc = 0;
 let last = 0;
 
 function loop(now) {
-  if (!last) last = now;
+  if (!last) { last = now; debug.fpsAt = now; }
   let dt = now - last;
   last = now;
   if (dt > 100) dt = 100;
@@ -408,6 +444,14 @@ function loop(now) {
     steps++;
   }
   if (steps === 5) acc = 0;
+
+  /* 调试 FPS：每 0.5 秒统计一次渲染帧数 */
+  debug.frames++;
+  if (now - debug.fpsAt >= 500) {
+    debug.fpsVal = Math.round(debug.frames * 1000 / (now - debug.fpsAt));
+    debug.frames = 0;
+    debug.fpsAt = now;
+  }
 
   render();
   requestAnimationFrame(loop);
@@ -424,4 +468,4 @@ document.addEventListener('visibilitychange', () => {
 requestAnimationFrame(loop);
 
 /* 便于调试：控制台可查看当前状态 */
-window.__game = { get state() { return state.name; }, get match() { return match; } };
+window.__game = { get state() { return state.name; }, get match() { return match; }, debug };

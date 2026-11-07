@@ -93,6 +93,9 @@ export class Match {
         this.camera.shake(4, 20);
       }
     };
+
+    /* 双人从舞台中央对称开场 */
+    this._positions();
   }
 
   /* ---- 回合控制 ---------------------------------------------------------- */
@@ -110,11 +113,24 @@ export class Match {
     resetFx();
     this.camera.targetZoom = 1;
     this.camera.zoom = 1;
-    this.camera.x = 90;
+    this.camera.x = Math.max(0, mid - 240);
   }
 
   _nextRound() {
     this.round++;
+    this.timer = 99 * 60;
+    this.phase = 'intro';
+    this.phaseT = 0;
+    this.reason = '';
+    this.roundWinner = null;
+    /* 每回合开始保留 50% 能量 */
+    this.a.meter = Math.min(100, this.a.meter * 0.5);
+    this.b.meter = Math.min(100, this.b.meter * 0.5);
+    this._positions();
+  }
+
+  /** 血量相同的时间到：重开本回合，不改变比分与回合数 */
+  _replayRound() {
     this.timer = 99 * 60;
     this.phase = 'intro';
     this.phaseT = 0;
@@ -166,6 +182,8 @@ export class Match {
       this.a.update(this.b);
       this.b.update(this.a);
       this.combat.update(this.a, this.b);
+      /* 训练模式：能量常满，方便反复练习必杀/超必杀 */
+      if (this.training) this.a.meter = 100;
       if (!this.training) this._checkEnd();
       this.camera.update(this.a, this.b, false);
       if (this.phase === 'fight' && !this.training) {
@@ -198,6 +216,9 @@ export class Match {
           this.phaseT = 0;
           this.matchWinner = this.wins[0] >= 2 ? this.a : this.b;
           Audio.play('win');
+        } else if (this.reason === 'time' && this.roundWinner === null) {
+          /* 时间到且血量相同：平局重开本回合 */
+          this._replayRound();
         } else {
           this._nextRound();
         }
@@ -281,6 +302,28 @@ export class Match {
     this.combat.draw(ctx, time);
     drawFx(ctx);
 
+    ctx.restore();
+    ctx.restore();
+  }
+
+  /** 调试：F1 显示判定框（红 = 攻击，蓝 = 受击） */
+  drawDebug(ctx) {
+    const cam = this.camera;
+    ctx.save();
+    if (cam.zoom !== 1) {
+      ctx.translate(240, 135);
+      ctx.scale(cam.zoom, cam.zoom);
+      ctx.translate(-240, -135);
+    }
+    ctx.save();
+    ctx.translate(-Math.round(cam.x + cam.sx), Math.round(cam.sy));
+    ctx.lineWidth = 1;
+    for (const u of [this.a, this.b]) {
+      ctx.strokeStyle = '#4fa3ff';
+      for (const b of u.hurtboxes()) ctx.strokeRect(b.x1, b.y1, b.x2 - b.x1, b.y2 - b.y1);
+      ctx.strokeStyle = '#ff4040';
+      for (const b of u.attackBoxes()) ctx.strokeRect(b.x1, b.y1, b.x2 - b.x1, b.y2 - b.y1);
+    }
     ctx.restore();
     ctx.restore();
   }
