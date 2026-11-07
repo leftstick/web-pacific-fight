@@ -51,6 +51,56 @@ function drawCrown(g, def, hx, hy, P, dark) {
     case 'block':
       oct(g, hx, hy - 8, 9, 4, P.metal, dark);
       break;
+    case 'flame': /* 诺瓦：三簇火焰双角 */
+      tri(g, hx - 9, hy + 2, 8, 13, P.accent, dark);
+      tri(g, hx - 1, hy + 1, 9, 18, P.accent, dark);
+      tri(g, hx + 7, hy + 3, 7, 11, P.accent, dark);
+      break;
+    case 'sail': /* 阿库亚：后掠旗鱼鳍冠 */
+      g.beginPath();
+      g.moveTo(hx + 2, hy - 4);
+      g.lineTo(hx - 22, hy - 20);
+      g.lineTo(hx - 3, hy + 2);
+      g.closePath();
+      g.fillStyle = P.accent; g.fill();
+      g.lineWidth = 2; g.strokeStyle = dark; g.stroke();
+      break;
+    case 'corona': /* 索拉：悬浮日冕环 */
+      oct(g, hx + 1, hy - 17, 10, 3, P.accent, dark);
+      oct(g, hx + 1, hy - 17, 6, 2, P.suit, dark);
+      g.fillStyle = P.eye;
+      g.fillRect(hx, hy - 26, 2, 4);
+      g.fillRect(hx - 11, hy - 18, 3, 2);
+      g.fillRect(hx + 11, hy - 18, 3, 2);
+      break;
+    case 'batwing': /* 奈克缇：蝠翼双角 */
+      g.beginPath();
+      g.moveTo(hx - 2, hy - 5);
+      g.lineTo(hx - 20, hy - 17);
+      g.lineTo(hx - 8, hy + 1);
+      g.closePath();
+      g.fillStyle = P.accent; g.fill();
+      g.lineWidth = 2; g.strokeStyle = dark; g.stroke();
+      g.beginPath();
+      g.moveTo(hx + 5, hy - 5);
+      g.lineTo(hx + 20, hy - 15);
+      g.lineTo(hx + 9, hy + 1);
+      g.closePath();
+      g.fillStyle = P.accent; g.fill(); g.stroke();
+      break;
+    case 'vine': /* 维尔德：藤蔓缠绕冠 */
+      for (let i = 0; i < 3; i++) {
+        oct(g, hx - 8 + i * 8, hy - 7, 6, 3, P.accent, dark);
+      }
+      tri(g, hx - 6, hy - 9, 5, 7, P.metal, dark);
+      tri(g, hx + 4, hy - 9, 5, 8, P.metal, dark);
+      break;
+    case 'ice': /* 格莱斯：参差冰棱冠 */
+      tri(g, hx - 11, hy + 1, 5, 10, P.accent, dark);
+      tri(g, hx - 5, hy, 6, 17, P.accent, dark);
+      tri(g, hx + 2, hy + 1, 6, 13, P.accent, dark);
+      tri(g, hx + 8, hy + 2, 5, 9, P.accent, dark);
+      break;
     default: // ring
       oct(g, hx - 1, hy - 8, 7, 4, P.metal, dark);
       oct(g, hx - 12, hy - 6, 3, 3, P.accent, dark);
@@ -84,6 +134,34 @@ function drawTimer(g, def, x, y, P, dark) {
       oct(g, x, y, 5, 5, P.metal, dark);
       oct(g, x, y, 2, 2, c, dark);
       break;
+    case 'sun': /* 索拉：八芒太阳轮 */
+      g.strokeStyle = P.metal;
+      g.lineWidth = 2;
+      for (let i = 0; i < 8; i++) {
+        const a = i * Math.PI / 4;
+        g.beginPath();
+        g.moveTo(x + Math.cos(a) * 4, y + Math.sin(a) * 4);
+        g.lineTo(x + Math.cos(a) * 8, y + Math.sin(a) * 8);
+        g.stroke();
+      }
+      oct(g, x, y, 4, 4, P.accent, dark);
+      g.fillStyle = c;
+      g.fillRect(x - 1, y - 1, 2, 2);
+      break;
+    case 'leaf': /* 维尔德：叶脉核心 */
+      g.beginPath();
+      g.moveTo(x, y - 8);
+      g.lineTo(x + 5, y);
+      g.lineTo(x, y + 8);
+      g.lineTo(x - 5, y);
+      g.closePath();
+      g.fillStyle = P.accent; g.fill();
+      g.lineWidth = 2; g.strokeStyle = dark; g.stroke();
+      g.fillStyle = c;
+      g.fillRect(x - 1, y - 5, 2, 10);
+      g.fillRect(x - 4, y - 1, 3, 2);
+      g.fillRect(x + 2, y + 1, 3, 2);
+      break;
     default: // diamond
       g.beginPath();
       g.moveTo(x, y - 5); g.lineTo(x + 4, y); g.lineTo(x, y + 5); g.lineTo(x - 4, y);
@@ -91,6 +169,36 @@ function drawTimer(g, def, x, y, P, dark) {
       g.fillStyle = P.metal; g.fill(); g.stroke();
       g.fillStyle = c; g.fillRect(x - 1, y - 1, 2, 2);
       break;
+  }
+}
+
+/** 额头核心（阿库亚水滴 / 奈克缇六芒星），尺寸比胸口核心更小 */
+function drawHeadCore(g, def, x, y, P, dark) {
+  if (def.timer === 'teardrop') {
+    g.beginPath();
+    g.moveTo(x, y - 6);
+    g.lineTo(x + 4, y);
+    g.lineTo(x, y + 5);
+    g.lineTo(x - 4, y);
+    g.closePath();
+    g.fillStyle = P.accent; g.fill();
+    g.lineWidth = 2; g.strokeStyle = dark; g.stroke();
+    g.fillStyle = P.eye;
+    g.fillRect(x - 1, y - 1, 2, 3);
+  } else if (def.timer === 'star') {
+    g.beginPath();
+    for (let i = 0; i < 12; i++) {
+      const a = -Math.PI / 2 + i * Math.PI / 6;
+      const r = i % 2 === 0 ? 5 : 2.2;
+      const px = x + Math.cos(a) * r;
+      const py = y + Math.sin(a) * r;
+      if (i === 0) g.moveTo(px, py); else g.lineTo(px, py);
+    }
+    g.closePath();
+    g.fillStyle = P.accent; g.fill();
+    g.lineWidth = 1.5; g.strokeStyle = dark; g.stroke();
+    g.fillStyle = P.eye;
+    g.fillRect(x - 1, y - 1, 2, 2);
   }
 }
 
@@ -183,7 +291,7 @@ function drawHeroSprite(g, def, pose, flash) {
   g.fillStyle = P.base2; g.fill();
   g.lineWidth = 2; g.strokeStyle = dark; g.stroke();
   drawChest(g, def, sx, sy + 7, P);
-  drawTimer(g, def, sx, sy + 8, P, dark);
+  if (def.core !== 'head') drawTimer(g, def, sx, sy + 8, P, dark);
 
   /* 前腿 */
   const hipF = { x: hipX + 4 * B.w, y: hipY };
@@ -205,8 +313,10 @@ function drawHeroSprite(g, def, pose, flash) {
   oct(g, hx, hy, 9, 8, P.base, dark);
   /* 发光双眼 */
   g.fillStyle = P.eye;
-  g.fillRect(Math.round(hx + 1), Math.round(hy - 2), 4, 2);
-  g.fillRect(Math.round(hx + 7), Math.round(hy - 2), 3, 2);
+  g.fillRect(Math.round(hx + 1), Math.round(hy - 1), 4, 2);
+  g.fillRect(Math.round(hx + 7), Math.round(hy - 1), 3, 2);
+  /* 额头核心 */
+  if (def.core === 'head') drawHeadCore(g, def, hx + 1, hy - 4, P, dark);
   /* 头冠 */
   drawCrown(g, def, hx, hy + 6, P, dark);
 

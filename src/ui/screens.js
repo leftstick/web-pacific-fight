@@ -53,25 +53,28 @@ function wrapCjk(ctx, str, x, y, maxW, maxLines, size, color, lineH) {
   ctx.textBaseline = 'top';
   ctx.fillStyle = color;
 
-  let line = '';
-  let row = 0;
+  /* 先按宽度折行，再按最大行数截断，避免误加省略号 */
+  const lines = [];
+  let cur = '';
   for (let i = 0; i < str.length; i++) {
     const ch = str[i];
-    if (ctx.measureText(line + ch).width > maxW && line) {
-      ctx.fillText(line, x, y + row * lineH);
-      row++;
-      line = ch;
-      if (row >= maxLines) break;
+    if (cur && ctx.measureText(cur + ch).width > maxW) {
+      lines.push(cur);
+      cur = ch;
     } else {
-      line += ch;
+      cur += ch;
     }
   }
-  if (row < maxLines && line) {
-    if (row === maxLines - 1) {
-      while (line.length > 1 && ctx.measureText(line + '…').width > maxW) line = line.slice(0, -1);
-      if (line.length < str.length) line += '…';
+  if (cur) lines.push(cur);
+
+  const last = Math.min(lines.length, maxLines) - 1;
+  for (let i = 0; i <= last; i++) {
+    let s = lines[i];
+    if (i === last && lines.length > maxLines) {
+      while (s.length > 1 && ctx.measureText(s + '…').width > maxW) s = s.slice(0, -1);
+      s += '…';
     }
-    ctx.fillText(line, x, y + row * lineH);
+    ctx.fillText(s, x, y + i * lineH);
   }
   ctx.restore();
 }
@@ -254,12 +257,14 @@ export function drawCharSelect(ctx, time, list, index) {
     });
     ctx.restore();
 
-    cjk(ctx, h.name, r.x + 72, r.y + 12 + bob, { size: 14, bold: true, color: sel ? '#ffe6a8' : '#cdeeff' });
-    cjk(ctx, h.role, r.x + 118, r.y + 16 + bob, { size: 8, align: 'right', color: h.palette.accent });
+    cjk(ctx, h.short || h.name, r.x + 72, r.y + 9 + bob, { size: 13, bold: true, color: sel ? '#ffe6a8' : '#cdeeff' });
+    cjk(ctx, h.name.split('·')[0] + ' · ' + h.title, r.x + 72, r.y + 26 + bob, {
+      size: 7, color: h.palette.accent
+    });
 
-    wrapCjk(ctx, h.desc, r.x + 72, r.y + 33 + bob, 58, 2, 7,
+    wrapCjk(ctx, h.desc, r.x + 72, r.y + 37 + bob, 58, 2, 7,
       sel ? '#a9cfdf' : '#6f96a8', 9);
-    cjk(ctx, '体 ' + h.stats.hp + ' · 速 ' + h.stats.walk.toFixed(2), r.x + 72, r.y + 56 + bob, {
+    cjk(ctx, '体 ' + h.stats.hp + ' · 速 ' + h.stats.walk.toFixed(2), r.x + 72, r.y + 58 + bob, {
       size: 7, color: '#4f7a8c'
     });
   }

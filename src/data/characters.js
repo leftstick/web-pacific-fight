@@ -1,7 +1,7 @@
 /* =============================================================================
- * data/characters.js ── 6 名原创「光之战士」变体
- *  · 共享紧身战斗服 / 胸口能量计时器 / 发光双眼 / 头冠鳍片的视觉语言
- *  · 通过配色、头冠、计时器形状、胸甲纹样、体型、招式命名做原创差异化
+ * data/characters.js ── 6 名原创「光之战士」
+ *  · 视觉语言：紧身战斗服 / 能量核心 / 发光双眼 / 头冠 / 胸甲纹样
+ *  · 依据美术提示词逐角色实现：配色、体型、头冠、核心位置与招式命名
  *  · 定位两两不同：均衡 / 牵制 / 突进 / 奇袭 / 投技 / 重装
  * ========================================================================== */
 import { makeMove, hb } from './moves.js';
@@ -71,6 +71,7 @@ function makeHero(cfg) {
   return {
     id: cfg.id,
     name: cfg.name,
+    short: cfg.short,
     title: cfg.title,
     role: cfg.role,
     desc: cfg.desc,
@@ -78,6 +79,7 @@ function makeHero(cfg) {
     body: cfg.body,
     crown: cfg.crown,
     timer: cfg.timer,
+    core: cfg.core || 'chest',
     chest: cfg.chest,
     weapon: cfg.weapon,
     stats: cfg.stats,
@@ -87,133 +89,133 @@ function makeHero(cfg) {
 }
 
 export const HEROES = [
-  /* ① 均衡型：正统全能，攻守速度都在中位 */
+  /* ① 炽核·诺瓦 NOVA：红橙 + 冷银，胸口菱形核心，火焰双角冠 */
   makeHero({
-    id: 'canghui', name: '苍辉', title: '均衡型', role: '均衡',
-    desc: '攻守均衡，适合上手。',
+    id: 'nova', name: '炽核·诺瓦', short: '诺瓦', title: '均衡型', role: '均衡',
+    desc: '红银光刃，攻守均衡。',
     palette: {
-      base: '#eaf4ff', base2: '#b9cadd', suit: '#1b3f78', suit2: '#122a4d',
-      accent: '#63e2ff', eye: '#d9fbff', dark: '#07111f', metal: '#9fc2dd'
+      base: '#f3f7ff', base2: '#c9d2dc', suit: '#e8412f', suit2: '#a52a1d',
+      accent: '#ffb347', eye: '#ffc14d', dark: '#2a0a06', metal: '#d9dee6'
     },
     body: { w: 1.0, shoulder: 1.0, bulk: 1.0, leg: 1.0 },
-    crown: 'fin', timer: 'diamond', chest: 'v', weapon: 'blade',
+    crown: 'flame', timer: 'diamond', core: 'chest', chest: 'v', weapon: 'blade',
     stats: { hp: 1000, walk: 1.62, dash: 4.0, jump: 7.0, weight: 1.0 },
     portrait: 0,
     overrides: {
-      special: { name: '光刃·裂波', damage: 100 },
-      super: { name: '超必杀·苍蓝裁决', damage: 250 }
+      special: { name: '炽核·裂波', damage: 100 },
+      super: { name: '超必杀·新星裁决', damage: 250 }
     }
   }),
 
-  /* ② 牵制型：远程光矢，移动偏慢，靠距离压制 */
+  /* ② 苍澜·阿库亚 AQUA：青蓝 + 珍珠银，额头水滴核心，旗鱼鳍冠 */
   makeHero({
-    id: 'mulan', name: '暮蓝', title: '牵制型', role: '牵制',
-    desc: '光矢封距，逼敌入局。',
+    id: 'aqua', name: '苍澜·阿库亚', short: '阿库亚', title: '牵制型', role: '牵制',
+    desc: '苍澜光矢，封锁距离。',
     palette: {
-      base: '#dfe8f7', base2: '#a9b3d4', suit: '#2a2f6b', suit2: '#191d47',
-      accent: '#8a7bff', eye: '#cfc4ff', dark: '#0a0a1e', metal: '#8e97c9'
+      base: '#e9fbff', base2: '#b7d9e6', suit: '#2e8fd6', suit2: '#1b5c92',
+      accent: '#7fe6ff', eye: '#bff4ff', dark: '#05141f', metal: '#d8e8ee'
     },
-    body: { w: 0.94, shoulder: 0.92, bulk: 0.94, leg: 1.02 },
-    crown: 'crest', timer: 'bar', chest: 'wave', weapon: 'bow',
+    body: { w: 0.88, shoulder: 0.86, bulk: 0.9, leg: 1.08 },
+    crown: 'sail', timer: 'teardrop', core: 'head', chest: 'wave', weapon: 'bow',
     stats: { hp: 940, walk: 1.42, dash: 3.7, jump: 7.2, weight: 0.95 },
     portrait: 1,
     overrides: {
       light: { name: '光矢·点射', hitboxes: [hb(5, 7, 30, -70, 48, 20)] },
       heavy: { name: '光矢·贯穿', startup: 13, recovery: 21, damage: 72 },
       special: {
-        name: '必杀·苍蓝光矢', anim: 'special',
+        name: '苍澜·水矢', anim: 'special',
         damage: 0, startup: 14, active: 1, recovery: 26,
         hitboxes: [], spawnFrame: 14,
-        projectile: { speed: 5.4, w: 22, h: 10, life: 110, damage: 74, hitstun: 18, level: 'mid', color: '#8a7bff' }
+        projectile: { speed: 5.4, w: 22, h: 10, life: 110, damage: 74, hitstun: 18, level: 'mid', color: '#57d8ff' }
       },
-      super: { name: '超必杀·暮蓝星陨', damage: 235 }
+      super: { name: '超必杀·深海星陨', damage: 235 }
     }
   }),
 
-  /* ③ 突进型：最快的移动与突进，贴身压制 */
+  /* ③ 曜金·索拉 SOLAR：金黄 + 白，八芒太阳轮，日冕环冠 */
   makeHero({
-    id: 'chisun', name: '赤隼', title: '突进型', role: '突进',
-    desc: '高速连段，防御偏弱。',
+    id: 'solar', name: '曜金·索拉', short: '索拉', title: '突进型', role: '突进',
+    desc: '日轮突进，压制全场。',
     palette: {
-      base: '#ffe9dd', base2: '#d9a48c', suit: '#8a1f24', suit2: '#5c1014',
-      accent: '#ff7a3c', eye: '#ffe1a8', dark: '#1a0708', metal: '#e0a07a'
+      base: '#fffaf0', base2: '#efdcae', suit: '#e8b33b', suit2: '#a97a16',
+      accent: '#fff3b0', eye: '#fffbe0', dark: '#241503', metal: '#ffffff'
     },
-    body: { w: 0.96, shoulder: 0.96, bulk: 0.92, leg: 1.0 },
-    crown: 'blade', timer: 'cross', chest: 'stripe', weapon: 'claw',
+    body: { w: 1.06, shoulder: 1.14, bulk: 1.06, leg: 1.0 },
+    crown: 'corona', timer: 'sun', core: 'chest', chest: 'plate', weapon: 'fist',
     stats: { hp: 920, walk: 1.95, dash: 4.9, jump: 7.3, weight: 0.9 },
     portrait: 2,
     overrides: {
       light: { name: '疾拳·连打', startup: 4, damage: 28, recovery: 8 },
       heavy: { name: '烈踢·破空', startup: 9, damage: 70, recovery: 17 },
-      special: { name: '必杀·赤炎突进', startup: 10, damage: 96, push: 4.8, dash: 5.5 },
-      super: { name: '超必杀·焚天烈袭', damage: 265 }
+      special: { name: '曜金·日轮突进', startup: 10, damage: 96, push: 4.8, dash: 5.5 },
+      super: { name: '超必杀·焚天日冕', damage: 265 }
     }
   }),
 
-  /* ④ 奇袭型：闪现绕背与下段偷袭 */
+  /* ④ 幽紫·奈克缇 NOCTIS：幽紫 + 暗银，额前六芒星，蝠翼双角 */
   makeHero({
-    id: 'youying', name: '幽荧', title: '奇袭型', role: '奇袭',
-    desc: '影步绕后，出手诡异。',
+    id: 'noctis', name: '幽紫·奈克缇', short: '奈克缇', title: '奇袭型', role: '奇袭',
+    desc: '影步绕后，六芒暗袭。',
     palette: {
-      base: '#e6f7ee', base2: '#9fc7b4', suit: '#123a34', suit2: '#0a2622',
-      accent: '#57ffb0', eye: '#c9ffe4', dark: '#04120f', metal: '#79b7a4'
+      base: '#efe6ff', base2: '#b9a8d6', suit: '#6c4bb6', suit2: '#3e2870',
+      accent: '#ff5cf0', eye: '#ff9bf5', dark: '#0d0618', metal: '#8f8aa3'
     },
-    body: { w: 0.9, shoulder: 0.9, bulk: 0.88, leg: 1.06 },
-    crown: 'horn', timer: 'circle', chest: 'core', weapon: 'dagger',
+    body: { w: 0.88, shoulder: 0.88, bulk: 0.86, leg: 1.08 },
+    crown: 'batwing', timer: 'star', core: 'head', chest: 'core', weapon: 'dagger',
     stats: { hp: 900, walk: 1.78, dash: 4.4, jump: 7.5, weight: 0.88 },
     portrait: 3,
     overrides: {
       low: { name: '影足·断隙', damage: 30, startup: 5 },
       heavy: { name: '影刃·回旋', damage: 72 },
-      special: { name: '必杀·影步', mechanic: 'teleport', startup: 11, damage: 92, spawnFrame: 11 },
-      super: { name: '超必杀·幽影乱舞', damage: 240 }
+      special: { name: '幽紫·影步', mechanic: 'teleport', startup: 11, damage: 92, spawnFrame: 11 },
+      super: { name: '超必杀·暗域乱舞', damage: 240 }
     }
   }),
 
-  /* ⑤ 投技型：近身指令投，血厚但慢 */
+  /* ⑤ 翡翠·维尔德 VERDE：翠绿 + 银，叶脉核心，藤冠，重型投技 */
   makeHero({
-    id: 'panshi', name: '磐石', title: '投技型', role: '投技',
-    desc: '贴身投技，近身即死。',
+    id: 'verde', name: '翡翠·维尔德', short: '维尔德', title: '投技型', role: '投技',
+    desc: '藤冠投技，近身绞杀。',
     palette: {
-      base: '#f2e6c8', base2: '#c4ab7c', suit: '#5a3a12', suit2: '#3a2508',
-      accent: '#ffc14d', eye: '#ffe9a8', dark: '#150c02', metal: '#b08b4f'
+      base: '#e9fff4', base2: '#a9dcc2', suit: '#35a472', suit2: '#1f6b4a',
+      accent: '#8cf0a8', eye: '#b6ffcf', dark: '#04140d', metal: '#c7d5ce'
     },
-    body: { w: 1.14, shoulder: 1.16, bulk: 1.18, leg: 1.0 },
-    crown: 'block', timer: 'hex', chest: 'plate', weapon: 'fist',
+    body: { w: 1.16, shoulder: 1.18, bulk: 1.2, leg: 1.0 },
+    crown: 'vine', timer: 'leaf', core: 'chest', chest: 'plate', weapon: 'fist',
     stats: { hp: 1120, walk: 1.28, dash: 3.4, jump: 6.4, weight: 1.2 },
     portrait: 4,
     overrides: {
       light: { name: '铁掌·推山', damage: 36, push: 2.4 },
       heavy: { name: '重拳·崩岳', startup: 14, damage: 88, recovery: 22 },
       special: {
-        name: '必杀·断脊摔', level: 'throw', damage: 150, startup: 7,
+        name: '翡翠·断脊摔', level: 'throw', damage: 150, startup: 7,
         active: 2, recovery: 28, knockdown: true, push: 5.5,
         hitboxes: [hb(7, 8, 28, -58, 46, 56)]
       },
-      super: { name: '超必杀·地裂抱杀', damage: 300 }
+      super: { name: '超必杀·森罗抱杀', damage: 300 }
     }
   }),
 
-  /* ⑥ 重装型：霸体推进，最高伤害与最慢速度 */
+  /* ⑥ 霜白·格莱斯 GLACE：冰白 + 浅蓝，六边冰晶，冰棱冠，最重装 */
   makeHero({
-    id: 'leizhu', name: '雷铸', title: '重装型', role: '重装',
-    desc: '霸体重锤，硬吃一击。',
+    id: 'glace', name: '霜白·格莱斯', short: '格莱斯', title: '重装型', role: '重装',
+    desc: '冰晶重装，霸体反打。',
     palette: {
-      base: '#dfe3ea', base2: '#a3adbd', suit: '#3b414d', suit2: '#242932',
-      accent: '#ffd34d', eye: '#fff0b0', dark: '#0b0d10', metal: '#98a3b3'
+      base: '#ffffff', base2: '#cfe6f2', suit: '#e6f2f8', suit2: '#a7c6d8',
+      accent: '#7fc4e8', eye: '#d9f6ff', dark: '#0a1a24', metal: '#7fc4e8'
     },
-    body: { w: 1.2, shoulder: 1.24, bulk: 1.26, leg: 0.96 },
-    crown: 'ring', timer: 'ring', chest: 'bolt', weapon: 'hammer',
+    body: { w: 1.24, shoulder: 1.3, bulk: 1.3, leg: 1.02 },
+    crown: 'ice', timer: 'hex', core: 'chest', chest: 'plate', weapon: 'fist',
     stats: { hp: 1180, walk: 1.16, dash: 3.1, jump: 6.1, weight: 1.32 },
     portrait: 5,
     overrides: {
-      light: { name: '重刃·压', damage: 38, startup: 7, recovery: 11 },
-      heavy: { name: '重锤·落雷', startup: 15, damage: 96, recovery: 24, armor: 1, knockdown: true },
+      light: { name: '寒拳·碎冰', damage: 38, startup: 7, recovery: 11 },
+      heavy: { name: '冰锤·落霜', startup: 15, damage: 96, recovery: 24, armor: 1, knockdown: true },
       special: {
-        name: '必杀·雷铸崩击', startup: 18, damage: 128, recovery: 28,
+        name: '霜白·冰棱崩击', startup: 18, damage: 128, recovery: 28,
         armor: 1, knockdown: true, hitSfx: 'hitSuper'
       },
-      super: { name: '超必杀·天雷铸灭', damage: 320 }
+      super: { name: '超必杀·绝对零度', damage: 320 }
     }
   })
 ];

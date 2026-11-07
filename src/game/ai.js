@@ -183,7 +183,7 @@ export class AIController {
     const s = this.self;
     const m = s.def.moves;
 
-    /* 终焉兽半血后：高概率切换震波（special2） */
+    /* 陨核巨像半血后：高概率切换震波（special2） */
     if (s.phase2 && m.special2 && Math.random() < 0.55) {
       this.press.special2 = 2;
       return;

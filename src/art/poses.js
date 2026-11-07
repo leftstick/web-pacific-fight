@@ -160,7 +160,7 @@ export function monsterPose(def, action, t) {
         armB: [-16 - s * 3, 16],
         legF: [6, 8], legB: [-8, 10],
         tail: s * 0.25,
-        wing: kind === 'float' ? 0.6 + s * 0.4 : 0
+        wing: kind === 'float' || kind === 'wyvern' ? 0.6 + s * 0.4 : 0
       });
     }
     case 'walk': {

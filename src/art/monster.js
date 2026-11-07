@@ -1,5 +1,5 @@
 /* =============================================================================
- * art/monster.js ── 怪兽像素骨架（四足 / 双足 / 虫形 / 浮空 / 团块）
+ * art/monster.js ── 怪兽像素骨架（四足 / 双足 / 虫形 / 浮空 / 团块 / 蠕虫 / 蜘蛛 / 蟾蜍 / 翼龙 / 章鱼）
  *  · 同一坐标原点：MON_OX / MON_OY 为脚底中心
  *  · 受击白闪使用 MONO 全白调色板，不额外做合成操作
  * ========================================================================== */
@@ -16,7 +16,7 @@ export const MONO = {
 };
 
 function monsterEyes(g, def, x, y, P, dark, spread) {
-  const n = Math.min(6, def.eyes || 2);
+  const n = Math.min(6, def.eyes == null ? 2 : def.eyes);
   for (let i = 0; i < n; i++) {
     const ox = (i - (n - 1) / 2) * spread;
     const oy = (i % 2) * -(spread * 0.55);
@@ -234,6 +234,194 @@ function drawBlob(g, def, pose, P, dark) {
   }
 }
 
+/** 骨甲蠕虫：分节骨甲破土，环形齿口 */
+function drawWorm(g, def, pose, P, dark) {
+  const h = def.h, gy = MON_OY;
+  const baseX = MON_OX - h * 0.06;
+  const segs = 5;
+  let x = baseX, y = gy;
+  for (let i = 0; i < segs; i++) {
+    const k = i / (segs - 1);
+    const cx = baseX + Math.sin(k * 1.25) * h * 0.16;
+    const cy = gy - k * h * 0.66 + pose.dy;
+    oct(g, cx, cy, h * 0.125, h * 0.10, i % 2 ? P.shell2 : P.shell, dark);
+    /* 肋骨棘刺 */
+    tri(g, cx - h * 0.10, cy - h * 0.055, h * 0.05, h * 0.09, P.spike, dark);
+    tri(g, cx + h * 0.05, cy - h * 0.060, h * 0.05, h * 0.08, P.spike, dark);
+    x = cx; y = cy;
+  }
+  /* 环形口器 */
+  const hx = x + h * 0.02, hy = y - h * 0.02;
+  oct(g, hx, hy, h * 0.155, h * 0.135, P.shell, dark);
+  oct(g, hx, hy, h * 0.105, h * 0.095, P.shell2, dark);
+  oct(g, hx, hy, h * 0.055, h * 0.050, P.dark, dark);
+  g.fillStyle = P.claw;
+  for (let i = 0; i < 10; i++) {
+    const a = i * Math.PI / 5;
+    g.fillRect(Math.round(hx + Math.cos(a) * h * 0.085) - 1,
+      Math.round(hy + Math.sin(a) * h * 0.075) - 1, 3, 3);
+  }
+  /* 落石碎屑 */
+  g.fillStyle = P.spike;
+  g.fillRect(Math.round(baseX - h * 0.20), gy - 6, 5, 3);
+  g.fillRect(Math.round(baseX + h * 0.14), gy - 3, 4, 2);
+}
+
+/** 结晶蜘蛛：八条晶腿 + 多面体腹部 */
+function drawSpider(g, def, pose, P, dark) {
+  const h = def.h, gy = MON_OY;
+  const cy = gy - h * 0.34 + pose.dy;
+  /* 腹部晶体 */
+  oct(g, MON_OX - h * 0.18, cy + h * 0.02, h * 0.25, h * 0.20, P.shell, dark);
+  tri(g, MON_OX - h * 0.28, cy - h * 0.02, h * 0.10, h * 0.14, P.glow, dark);
+  tri(g, MON_OX - h * 0.16, cy - h * 0.04, h * 0.08, h * 0.10, P.claw, dark);
+  /* 八条晶腿（身体之后绘制，左右两侧都清晰可见） */
+  for (let i = 0; i < 8; i++) {
+    const side = i < 4 ? -1 : 1;
+    const k = i % 4;
+    const bx = MON_OX + (k - 1.5) * h * 0.06;
+    const a = side * (46 + k * 16) + pose.legB[0] * 0.18;
+    const s1 = seg(g, bx, cy - h * 0.04, a, h * 0.25, 9, 6, P.spike, dark);
+    const s2 = seg(g, s1.x, s1.y, a + side * 30, h * 0.23, 6, 4, P.claw, dark);
+    g.fillStyle = P.glow;
+    g.fillRect(Math.round(s2.x) - 1, Math.round(s2.y) - 1, 2, 2);
+  }
+  /* 头胸部与螯肢 */
+  oct(g, MON_OX + h * 0.16, cy - h * 0.04, h * 0.17, h * 0.14, P.shell, dark);
+  monsterEyes(g, def, MON_OX + h * 0.16, cy - h * 0.10, P, dark, h * 0.038);
+  const ped = seg(g, MON_OX + h * 0.28, cy + h * 0.02, 78, h * 0.12, 6, 4, P.claw, dark);
+  seg(g, ped.x, ped.y, 96, h * 0.08, 4, 3, P.claw, dark);
+  /* 纺器滴丝 */
+  g.fillStyle = P.glow;
+  g.fillRect(Math.round(MON_OX - h * 0.34), Math.round(cy + h * 0.16), 2, 6);
+}
+
+/** 毒沼蟾王：宽扁躯干、鼓眼、长舌 */
+function drawToad(g, def, pose, P, dark) {
+  const h = def.h, gy = MON_OY;
+  const cy = gy - h * 0.30 + pose.dy;
+  /* 蹼足 */
+  for (let i = 0; i < 2; i++) {
+    const fx = MON_OX + (i ? h * 0.20 : -h * 0.20);
+    seg(g, fx, cy + h * 0.16, i ? 12 : -12, h * 0.14, 12, 9, P.shell2, dark);
+    g.fillStyle = P.claw;
+    g.fillRect(Math.round(fx) - 6, Math.round(gy) - 4, 16, 4);
+  }
+  /* 身体 */
+  oct(g, MON_OX, cy, h * 0.34, h * 0.26, P.shell, dark);
+  oct(g, MON_OX, cy + h * 0.10, h * 0.29, h * 0.16, P.belly, dark);
+  /* 疣状毒囊 */
+  for (let i = 0; i < 6; i++) {
+    const ox = (i - 2.5) * h * 0.10;
+    oct(g, MON_OX + ox, cy - h * 0.16 + (i % 2) * 4, 4, 3, P.spike, dark);
+  }
+  /* 鼓眼 */
+  for (let i = 0; i < 2; i++) {
+    const ex = MON_OX + (i ? h * 0.22 : h * 0.06), ey = cy - h * 0.28;
+    oct(g, ex, ey, h * 0.075, h * 0.07, P.shell, dark);
+    g.fillStyle = P.eye;
+    g.fillRect(Math.round(ex) - 4, Math.round(ey) - 3, 8, 6);
+    g.fillStyle = P.dark;
+    g.fillRect(Math.round(ex) - 3, Math.round(ey) - 1, 7, 2);
+  }
+  /* 巨口与长舌 */
+  const jaw = pose.mouth * h * 0.10;
+  g.beginPath();
+  g.moveTo(MON_OX - h * 0.27, cy + h * 0.02);
+  g.lineTo(MON_OX + h * 0.27, cy - h * 0.01);
+  g.lineTo(MON_OX + h * 0.04, cy + h * 0.10 + jaw);
+  g.closePath();
+  g.fillStyle = P.dark; g.fill();
+  g.lineWidth = 2; g.strokeStyle = dark; g.stroke();
+  if (pose.mouth > 0.35) {
+    g.fillStyle = P.belly;
+    g.fillRect(Math.round(MON_OX + h * 0.10), Math.round(cy + h * 0.04), Math.round(h * 0.24), 5);
+  }
+  /* 前肢 */
+  seg(g, MON_OX + h * 0.24, cy + h * 0.02, pose.armF[0] * 0.4 + 40, h * 0.18, 13, 9, P.shell, dark);
+}
+
+/** 双头翼龙：双首、蝠翼、钩爪 */
+function drawWyvern(g, def, pose, P, dark) {
+  const h = def.h, gy = MON_OY;
+  const cy = gy - h * 0.48 + pose.dy;
+  const flap = pose.wing * h * 0.10;
+  /* 后翼 */
+  g.beginPath();
+  g.moveTo(MON_OX - 2, cy - h * 0.04);
+  g.lineTo(MON_OX - h * 0.40, cy - h * 0.24 - flap);
+  g.lineTo(MON_OX - h * 0.30, cy + h * 0.14);
+  g.lineTo(MON_OX - 2, cy + h * 0.04);
+  g.closePath();
+  g.fillStyle = P.shell2; g.fill();
+  g.lineWidth = 2; g.strokeStyle = dark; g.stroke();
+  /* 前翼 */
+  g.beginPath();
+  g.moveTo(MON_OX + 2, cy - h * 0.02);
+  g.lineTo(MON_OX - h * 0.20, cy - h * 0.34 - flap * 1.4);
+  g.lineTo(MON_OX + h * 0.18, cy - h * 0.16);
+  g.closePath();
+  g.fillStyle = P.shell; g.fill(); g.stroke();
+  /* 躯干 */
+  oct(g, MON_OX, cy, h * 0.26, h * 0.16, P.shell, dark);
+  oct(g, MON_OX + 4, cy + h * 0.06, h * 0.20, h * 0.10, P.belly, dark);
+  /* 尾与倒钩 */
+  let tx = MON_OX - h * 0.22, ty = cy + h * 0.02;
+  for (let i = 0; i < 3; i++) {
+    const s = seg(g, tx, ty, 152 + i * 12, h * 0.14, 9 - i * 2, 6 - i, P.shell2, dark);
+    tx = s.x; ty = s.y;
+  }
+  tri(g, tx - 3, ty, 6, h * 0.10, P.spike, dark);
+  /* 两条长颈与双首 */
+  for (let i = 0; i < 2; i++) {
+    const nb = seg(g, MON_OX + h * 0.10, cy - h * 0.08, -32 + i * 22, h * 0.23, 12, 9, P.shell, dark);
+    const n2 = seg(g, nb.x, nb.y, -8 + i * 20, h * 0.17, 9, 7, P.shell, dark);
+    oct(g, n2.x, n2.y, h * 0.085, h * 0.07, P.shell, dark);
+    g.fillStyle = P.eye;
+    g.fillRect(Math.round(n2.x) - 1, Math.round(n2.y) - 3, 4, 2);
+    tri(g, n2.x - 4, n2.y - h * 0.04, 7, h * 0.08, P.spike, dark);
+    /* 双首吐息：一火一霜 */
+    g.fillStyle = i === 0 ? P.glow : '#9fe8ff';
+    g.fillRect(Math.round(n2.x) + 4, Math.round(n2.y) + 2, 6, 3);
+  }
+  /* 钩爪 */
+  const leg = seg(g, MON_OX - 4, cy + h * 0.08, -18, h * 0.18, 9, 7, P.shell2, dark);
+  g.fillStyle = P.claw;
+  g.fillRect(Math.round(leg.x) - 4, Math.round(leg.y), 9, 3);
+}
+
+/** 深渊章鱼：球状外套膜 + 六腕 + 单横瞳 */
+function drawOcto(g, def, pose, P, dark) {
+  const h = def.h, gy = MON_OY;
+  const cy = gy - h * 0.48 + pose.dy;
+  /* 六条腕足（0° 向下，向左右展开） */
+  for (let i = 0; i < 6; i++) {
+    const bx = MON_OX + (i - 2.5) * h * 0.075;
+    const a = -52 + i * 21 + pose.tail * 10;
+    const s1 = seg(g, bx, cy + h * 0.15, a, h * 0.22, 12, 9, P.shell2, dark);
+    const s2 = seg(g, s1.x, s1.y, a + (i % 2 ? 18 : -14), h * 0.19, 9, 6, P.shell2, dark);
+    g.fillStyle = P.claw;
+    g.fillRect(Math.round(s2.x), Math.round(s2.y), 2, 2);
+    g.fillRect(Math.round(s2.x) - 5, Math.round(s2.y) + 6, 2, 2);
+  }
+  /* 外套膜 */
+  oct(g, MON_OX, cy, h * 0.30, h * 0.26, P.shell, dark);
+  oct(g, MON_OX + 4, cy + h * 0.06, h * 0.22, h * 0.14, P.belly, dark);
+  /* 生物荧光斑点 */
+  g.fillStyle = P.glow;
+  for (let i = 0; i < 4; i++) {
+    g.fillRect(Math.round(MON_OX - h * 0.18 + i * h * 0.10), Math.round(cy - h * 0.16 + (i % 2) * 5), 3, 3);
+  }
+  /* 单只横瞳大眼 */
+  oct(g, MON_OX, cy - 1, 10, 7, P.claw, dark);
+  g.fillStyle = P.eye;
+  g.fillRect(MON_OX - 7, cy - 3, 14, 5);
+  g.fillStyle = P.dark;
+  g.fillRect(MON_OX - 5, cy - 1, 11, 2);
+  /* 头顶鳍 */
+  tri(g, MON_OX - 6, cy - h * 0.20, 10, h * 0.10, P.spike, dark);
+}
+
 /** 按 kind 分派绘制怪兽 */
 export function drawMonsterSprite(g, def, pose, flash) {
   const P = flash ? MONO : def.palette;
@@ -243,6 +431,11 @@ export function drawMonsterSprite(g, def, pose, flash) {
     case 'insect': drawInsect(g, def, pose, P, dark); break;
     case 'float': drawFloat(g, def, pose, P, dark); break;
     case 'blob': drawBlob(g, def, pose, P, dark); break;
+    case 'worm': drawWorm(g, def, pose, P, dark); break;
+    case 'spider': drawSpider(g, def, pose, P, dark); break;
+    case 'toad': drawToad(g, def, pose, P, dark); break;
+    case 'wyvern': drawWyvern(g, def, pose, P, dark); break;
+    case 'octo': drawOcto(g, def, pose, P, dark); break;
     default: drawBiped(g, def, pose, P, dark); break;
   }
 }
