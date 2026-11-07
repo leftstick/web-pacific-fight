@@ -378,15 +378,16 @@ function pauseChoose(i) {
 /* ---- 渲染 ---------------------------------------------------------------- */
 
 function renderLoading() {
+  const cx = VIEW_W / 2;
   ctx.fillStyle = '#05070a';
   ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-  cjk(ctx, '光之战士', 240, 92, { size: 30, align: 'center', bold: true, color: '#eaf6ff', shadow: '#1a5f8a' });
-  cjk(ctx, '像素对决', 240, 132, { size: 12, align: 'center', color: '#63e2ff' });
+  cjk(ctx, '光之战士', cx, 116, { size: 36, align: 'center', bold: true, color: '#eaf6ff', shadow: '#1a5f8a' });
+  cjk(ctx, '像素对决', cx, 162, { size: 14, align: 'center', color: '#63e2ff' });
   const k = Math.min(1, state.t / 48);
-  rect(ctx, 150, 174, 180, 8, '#101b24');
-  frame(ctx, 150, 174, 180, 8, '#2f4a5c');
-  rect(ctx, 152, 176, Math.round(176 * k), 4, '#63e2ff');
-  cjk(ctx, '正在程序化生成像素资产…', 240, 194, { size: 9, align: 'center', color: '#5f8ba1' });
+  rect(ctx, cx - 100, 212, 200, 9, '#101b24');
+  frame(ctx, cx - 100, 212, 200, 9, '#2f4a5c');
+  rect(ctx, cx - 98, 214, Math.round(196 * k), 5, '#63e2ff');
+  cjk(ctx, '正在程序化生成像素资产…', cx, 238, { size: 10, align: 'center', color: '#5f8ba1' });
 }
 
 function render() {

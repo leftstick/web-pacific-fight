@@ -4,6 +4,7 @@
  *  · 输入缓冲 6 帧：必杀、重击在硬直末尾按下也能在恢复后立即生效
  *  · 触屏按键由 ui/touch.js 通过 setVirtual() 注入，与键盘完全同构
  * ========================================================================== */
+import { VIEW_W, VIEW_H } from './canvas.js';
 
 /** 键位映射（桌面端调试用；触屏见 index.html 的 A/B/C 按钮） */
 const KEYMAP = {
@@ -53,8 +54,8 @@ export class Input {
     const toGame = (ev) => {
       const r = this.canvas.getBoundingClientRect();
       return {
-        x: (ev.clientX - r.left) / r.width * 480,
-        y: (ev.clientY - r.top) / r.height * 270
+        x: (ev.clientX - r.left) / r.width * VIEW_W,
+        y: (ev.clientY - r.top) / r.height * VIEW_H
       };
     };
 

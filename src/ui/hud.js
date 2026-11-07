@@ -1,11 +1,14 @@
 /* =============================================================================
  * ui/hud.js ── 战斗 HUD
  *  · 分段血条 + 延迟白条 / 防御槽 / 能量槽 / 回合灯 / 计时器 / 连击计数
- *  · 全部在 480×270 屏幕坐标系绘制，不受镜头缩放影响
+ *  · 全部在 640×360 屏幕坐标系绘制，不受镜头缩放影响
  * ========================================================================== */
 import { text, textWidth, cjk, rect, frame } from '../core/pixel.js';
+import { VIEW_W } from '../core/canvas.js';
 
 const SEGS = 10;
+const PAD = 18;
+const BAR_W = 236;
 
 function barSegments(ctx, x, y, w, h, ratio, color, flip) {
   const sw = w / SEGS;
@@ -51,61 +54,64 @@ export class Hud {
     const ra = Math.max(0, a.hp / a.maxHp);
     const rb = Math.max(0, b.hp / b.maxHp);
 
+    const rightX = VIEW_W - PAD - BAR_W;
+    const midX = VIEW_W / 2;
+
     /* HUD 底板：保证月亮 / 霓虹不会从血条缝隙里透出来 */
     ctx.fillStyle = 'rgba(3, 10, 16, 0.62)';
-    ctx.fillRect(0, 0, 480, 56);
+    ctx.fillRect(0, 0, VIEW_W, 64);
 
     /* ---- 血条（≤25% 红色闪烁）---- */
     const lowA = ra <= 0.25 && (time >> 3) % 2 === 0;
     const lowB = rb <= 0.25 && (time >> 3) % 2 === 0;
-    drawHealth(ctx, 14, 14, 168, 12, ra, this.lagA, lowA ? '#ff4a3c' : '#63e2ff', false);
-    drawHealth(ctx, 298, 14, 168, 12, rb, this.lagB, lowB ? '#ffdd55' : '#ff6a52', true);
+    drawHealth(ctx, PAD, 14, BAR_W, 13, ra, this.lagA, lowA ? '#ff4a3c' : '#63e2ff', false);
+    drawHealth(ctx, rightX, 14, BAR_W, 13, rb, this.lagB, lowB ? '#ffdd55' : '#ff6a52', true);
 
     /* 防御槽（细线） */
-    rect(ctx, 14, 29, 168, 3, '#0a141c');
-    barSegments(ctx, 14, 29, 168, 3, Math.max(0, a.guard / 100), '#8fd0e8', false);
-    rect(ctx, 298, 29, 168, 3, '#0a141c');
-    barSegments(ctx, 298, 29, 168, 3, Math.max(0, b.guard / 100), '#ffb08a', true);
+    rect(ctx, PAD, 31, BAR_W, 3, '#0a141c');
+    barSegments(ctx, PAD, 31, BAR_W, 3, Math.max(0, a.guard / 100), '#8fd0e8', false);
+    rect(ctx, rightX, 31, BAR_W, 3, '#0a141c');
+    barSegments(ctx, rightX, 31, BAR_W, 3, Math.max(0, b.guard / 100), '#ffb08a', true);
 
     /* ---- 能量槽 ---- */
-    this._meter(ctx, 14, 36, 150, a.meter, '#63e2ff', false);
-    this._meter(ctx, 316, 36, 150, b.meter, '#ffc14d', true);
+    this._meter(ctx, PAD, 39, 206, a.meter, '#63e2ff', false);
+    this._meter(ctx, VIEW_W - PAD - 206, 39, 206, b.meter, '#ffc14d', true);
 
     /* ---- 角色名 ---- */
-    cjk(ctx, a.def.name, 14, 48, { size: 11, bold: true, color: '#cdeeff' });
-    cjk(ctx, a.def.title, 14 + this._cjkW(a.def.name, 11) + 6, 50, { size: 8, color: '#5f8ba1' });
-    cjk(ctx, b.def.name, 466, 48, { size: 11, bold: true, color: '#ffd9cf', align: 'right' });
-    cjk(ctx, b.def.title, 466 - this._cjkW(b.def.name, 11) - 6, 50, { size: 8, color: '#a06e63', align: 'right' });
+    cjk(ctx, a.def.name, PAD, 52, { size: 12, bold: true, color: '#cdeeff' });
+    cjk(ctx, a.def.title, PAD + this._cjkW(a.def.name, 12) + 8, 54, { size: 9, color: '#5f8ba1' });
+    cjk(ctx, b.def.name, VIEW_W - PAD, 52, { size: 12, bold: true, color: '#ffd9cf', align: 'right' });
+    cjk(ctx, b.def.title, VIEW_W - PAD - this._cjkW(b.def.name, 12) - 8, 54, { size: 9, color: '#a06e63', align: 'right' });
 
     /* ---- 回合灯 ---- */
-    this._lamps(ctx, 188, 16, match.wins[0], '#63e2ff', false);
-    this._lamps(ctx, 292, 16, match.wins[1], '#ff6a52', true);
+    this._lamps(ctx, midX - 52, 18, match.wins[0], '#63e2ff', false);
+    this._lamps(ctx, midX + 52, 18, match.wins[1], '#ff6a52', true);
 
     /* ---- 计时器 ---- */
     const sec = Math.max(0, Math.ceil(match.timer / 60));
     const label = String(sec).padStart(2, '0');
     const low = sec <= 10;
     const blink = low && (time >> 3) % 2 === 0;
-    text(ctx, label, 240, 12, {
+    text(ctx, label, midX, 13, {
       scale: 2, align: 'center',
       color: blink ? '#ff5a4a' : '#eaf6ff',
       shadow: '#06121c'
     });
-    cjk(ctx, match.training ? '训练' : '第 ' + match.round + ' 回合', 240, 32, {
-      size: 8, align: 'center', color: '#6f96a8'
+    cjk(ctx, match.training ? '训练' : '第 ' + match.round + ' 回合', midX, 35, {
+      size: 9, align: 'center', color: '#6f96a8'
     });
 
     /* ---- 连击计数 ---- */
     if (b.comboIndex > 1 && b.comboTimer > 0) {
-      this._combo(ctx, 22, 86, b.comboIndex, '#ffe6a8', false);
+      this._combo(ctx, 26, 98, b.comboIndex, '#ffe6a8', false);
     }
     if (a.comboIndex > 1 && a.comboTimer > 0) {
-      this._combo(ctx, 458, 86, a.comboIndex, '#ffb0a0', true);
+      this._combo(ctx, VIEW_W - 26, 98, a.comboIndex, '#ffb0a0', true);
     }
 
     /* ---- 阶段提示 ---- */
     if (b.phase2) {
-      cjk(ctx, '狂暴', 466, 62, { size: 9, align: 'right', color: '#ff6a52', bold: true, shadow: '#2a0505' });
+      cjk(ctx, '狂暴', VIEW_W - 26, 70, { size: 10, align: 'right', color: '#ff6a52', bold: true, shadow: '#2a0505' });
     }
 
     /* ---- 中央横幅 ---- */
@@ -164,7 +170,7 @@ export class Hud {
       alpha = 1;
     }
     ctx.globalAlpha = alpha;
-    cjk(ctx, label, 240, 118, {
+    cjk(ctx, label, VIEW_W / 2, 150, {
       size, align: 'center', bold: true,
       color: match.reason === 'time' ? '#ffd76a' : '#eaf6ff',
       shadow: '#0a1830'

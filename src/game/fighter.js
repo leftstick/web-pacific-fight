@@ -4,7 +4,7 @@
  *    blockstun / hitstun / airhit / knockdown / getup / dash / ko / win
  *  · 招式判定、伤害结算交给 combat.js，本文件只负责状态与物理
  * ========================================================================== */
-import { ARENA_MIN_X, ARENA_MAX_X } from '../core/canvas.js';
+import { ARENA_MIN_X, ARENA_MAX_X, GROUND_Y } from '../core/canvas.js';
 import { toWorld } from './hitbox.js';
 import { Audio } from '../core/audio.js';
 import {
@@ -18,7 +18,7 @@ export class Fighter {
     this.def = def;
     this.isPlayer = !!opts.isPlayer;
     this.control = opts.control || null;
-    this.groundY = opts.groundY || 232;
+    this.groundY = opts.groundY || GROUND_Y;
 
     this.maxHp = def.stats.hp;
     this.hp = this.maxHp;

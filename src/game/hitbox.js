@@ -1,8 +1,9 @@
 /* =============================================================================
  * game/hitbox.js ── AABB 判定
  *  · 所有判定框都是数据（招式表里的 hitbox 数组 / 角色的 hurtbox）
- *  · 坐标约定：世界 x 向右；判定框 y 使用屏幕坐标（0 = 屏幕顶部，232 = 地面）
+ *  · 坐标约定：世界 x 向右；判定框 y 使用屏幕坐标（0 = 屏幕顶部，GROUND_Y = 地面）
  * ========================================================================== */
+import { GROUND_Y } from '../core/canvas.js';
 
 /**
  * 把角色本地的判定框转为世界 AABB。
@@ -12,7 +13,7 @@
  */
 export function toWorld(unit, box) {
   const cx = unit.x + unit.facing * (box.x || 0);
-  const foot = (unit.groundY == null ? 232 : unit.groundY) - (unit.y || 0);
+  const foot = (unit.groundY == null ? GROUND_Y : unit.groundY) - (unit.y || 0);
   const cy = foot + (box.y || 0);
   const w = box.w || 10;
   const h = box.h || 10;

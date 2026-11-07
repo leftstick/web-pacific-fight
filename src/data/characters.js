@@ -99,6 +99,7 @@ function makeHero(cfg) {
     weapon: cfg.weapon,
     stats: cfg.stats,
     portrait: cfg.portrait,
+    h: cfg.h || 150,
     moves
   };
 }

@@ -4,14 +4,14 @@
  *  · KO 后 0.25 倍速慢动作 1 秒 + 镜头推进 + 败者倒地 / 胜者姿态
  *  · 负责镜头、舞台、角色、特效、投射物与机关的统一绘制
  * ========================================================================== */
-import { GROUND_Y, ARENA_W } from '../core/canvas.js';
+import { GROUND_Y, ARENA_W, VIEW_W, VIEW_H } from '../core/canvas.js';
 import { Fighter } from './fighter.js';
 import { Combat } from './combat.js';
 import { Camera } from './camera.js';
 import { AIController } from './ai.js';
 import { drawStage } from '../art/background.js';
 import { drawSprite } from '../art/sprite.js';
-import { drawGhosts, drawFx, resetFx } from '../art/fx.js';
+import { drawGhosts, drawFx, drawScreenFlash, resetFx, updateFx } from '../art/fx.js';
 import { Audio } from '../core/audio.js';
 
 /** 把 Input 包装成 Fighter 能用的控制器 */
@@ -113,7 +113,7 @@ export class Match {
     resetFx();
     this.camera.targetZoom = 1;
     this.camera.zoom = 1;
-    this.camera.x = Math.max(0, mid - 240);
+    this.camera.x = Math.max(0, mid - VIEW_W / 2);
   }
 
   _nextRound() {
@@ -162,6 +162,10 @@ export class Match {
 
   update() {
     this.tick++;
+
+    /* 特效与震屏同样受 KO 慢动作影响：前 1 秒每 4 帧推进一次 */
+    const slowMo = this.phase === 'roundEnd' && this.phaseT < 60;
+    if (!slowMo || this.phaseT % 4 === 0) updateFx();
 
     if (this.phase === 'intro') {
       this.phaseT++;
@@ -278,9 +282,9 @@ export class Match {
     ctx.save();
     /* KO 推镜：以画面中心缩放 */
     if (cam.zoom !== 1) {
-      ctx.translate(240, 135);
+      ctx.translate(VIEW_W / 2, VIEW_H / 2);
       ctx.scale(cam.zoom, cam.zoom);
-      ctx.translate(-240, -135);
+      ctx.translate(-VIEW_W / 2, -VIEW_H / 2);
     }
 
     drawStage(ctx, this.stage, cam.x, time);
@@ -291,7 +295,7 @@ export class Match {
     /* 地面投影 */
     ctx.fillStyle = 'rgba(0,0,0,0.34)';
     for (const u of [this.a, this.b]) {
-      const w = u.def.kind ? 46 : 30;
+      const w = u.def.kind ? 52 : 34;
       const shrink = Math.max(0.3, 1 - u.y / 120);
       ctx.fillRect(Math.round(u.x - w * shrink / 2), GROUND_Y - 3, Math.round(w * shrink), 4);
     }
@@ -304,6 +308,9 @@ export class Match {
 
     ctx.restore();
     ctx.restore();
+
+    /* 超必杀全屏闪白：屏幕空间，位于 HUD 之下 */
+    drawScreenFlash(ctx);
   }
 
   /** 调试：F1 显示判定框（红 = 攻击，蓝 = 受击） */
@@ -311,9 +318,9 @@ export class Match {
     const cam = this.camera;
     ctx.save();
     if (cam.zoom !== 1) {
-      ctx.translate(240, 135);
+      ctx.translate(VIEW_W / 2, VIEW_H / 2);
       ctx.scale(cam.zoom, cam.zoom);
-      ctx.translate(-240, -135);
+      ctx.translate(-VIEW_W / 2, -VIEW_H / 2);
     }
     ctx.save();
     ctx.translate(-Math.round(cam.x + cam.sx), Math.round(cam.sy));

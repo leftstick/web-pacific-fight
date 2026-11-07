@@ -7,7 +7,10 @@
  * ========================================================================== */
 import { GROUND_Y, ARENA_W } from '../core/canvas.js';
 import { overlaps, overlapCenter } from './hitbox.js';
-import { hitSparks, blockSparks, dust, shockRing, damageText } from '../art/fx.js';
+import {
+  hitSparks, blockSparks, dust, shockRing, damageText,
+  superCharge, superBurst
+} from '../art/fx.js';
 import { Audio } from '../core/audio.js';
 
 const COMBO_SCALE = [1, 0.9, 0.8, 0.7, 0.6];
@@ -57,6 +60,17 @@ export class Combat {
     const mv = unit.move;
     if (!mv || unit.state !== 'attack') return;
     const f = unit.moveFrame;
+
+    /* 超必杀演出：起手聚能 → 判定帧释放光线 / 冲击波 / 震屏 */
+    if (unit.moveKey === 'super') {
+      const cy = GROUND_Y - 60 - (unit.y || 0);
+      if (f === 2) superCharge(unit.def, unit.x, cy);
+      if (f === mv.startup) {
+        superBurst(unit.def, unit.x, cy, unit.facing, GROUND_Y);
+        this._event('shake', { mag: 8, frames: 26 });
+        Audio.play('hitSuper');
+      }
+    }
 
     if (mv.spawnFrame != null && !unit.spawned && f >= mv.spawnFrame) {
       unit.spawned = true;
