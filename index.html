@@ -2,30 +2,192 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>环太平洋 · 机甲对决</title>
-<!-- 根目录跳转页：让一级 Pages 地址直接进入游戏目录 -->
-<meta http-equiv="refresh" content="0; url=pacific-rim-fight/">
-<link rel="canonical" href="pacific-rim-fight/">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#05070a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>光之战士 · 像素对决</title>
 <style>
-  html, body { height: 100%; margin: 0; }
-  body {
-    display: flex; align-items: center; justify-content: center;
-    background: #05090b; color: #cfe8ef; overflow: hidden;
-    font-family: "Microsoft YaHei", "PingFang SC", -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* =====================================================================
+   * 像素格斗 · 页面外壳
+   * 内部分辨率固定 480×270，整数倍放大并居中，四周留黑边（letterbox）。
+   * 所有界面均由 Canvas 绘制，DOM 只承担：横屏遮罩 / 全屏按钮 / 触屏按键。
+   * ===================================================================== */
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #05070a; overflow: hidden;
+    -webkit-user-select: none; user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: none;                 /* 禁止页面滚动与双击缩放 */
+    overscroll-behavior: none;
+    font-family: "PingFang SC", "Microsoft YaHei", "Heiti SC", sans-serif;
   }
-  .box { text-align: center; }
-  .box h1 { margin: 0; font-size: 28px; letter-spacing: 0.14em; color: #eefaff;
-            text-shadow: 0 0 18px rgba(111,208,255,0.55); }
-  .box p { margin: 12px 0 0; font-size: 13px; color: #7d99a3; letter-spacing: 0.06em; }
-  .box a { color: #6fd0ff; text-decoration: none; border-bottom: 1px dashed rgba(111,208,255,0.5); }
+  #stage-wrap {
+    position: absolute; left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    background: #000;
+  }
+  #game {
+    display: block;
+    image-rendering: pixelated;          /* 像素风：禁止插值 */
+    image-rendering: crisp-edges;
+    background: #000;
+    touch-action: none;
+  }
+
+  /* ---- 全屏按钮 -------------------------------------------------------- */
+  #btn-fullscreen {
+    position: fixed;
+    top: calc(8px + env(safe-area-inset-top));
+    right: calc(10px + env(safe-area-inset-right));
+    z-index: 90;
+    padding: 5px 9px;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    color: #9fe8ff;
+    background: rgba(6, 16, 24, 0.66);
+    border: 1px solid rgba(110, 210, 255, 0.45);
+    border-radius: 2px;
+    cursor: pointer;
+  }
+  #btn-fullscreen:active { background: rgba(20, 44, 60, 0.9); }
+
+  /* ---- 竖屏遮罩 -------------------------------------------------------- */
+  #rotate-mask {
+    position: fixed; inset: 0; z-index: 200;
+    display: none;
+    flex-direction: column;
+    align-items: center; justify-content: center;
+    background: #04070b;
+    color: #bfe9ff;
+    text-align: center;
+    padding: 24px;
+  }
+  #rotate-mask.show { display: flex; }
+  #rotate-mask .phone {
+    width: 58px; height: 96px;
+    border: 3px solid #6fd0ff;
+    border-radius: 9px;
+    margin-bottom: 18px;
+    position: relative;
+    animation: rot 2.1s ease-in-out infinite;
+    box-shadow: 0 0 18px rgba(111, 208, 255, 0.35);
+  }
+  #rotate-mask .phone::after {
+    content: ""; position: absolute; left: 50%; bottom: 6px;
+    width: 14px; height: 2px; margin-left: -7px; background: #6fd0ff;
+  }
+  @keyframes rot {
+    0%, 30%   { transform: rotate(0deg); }
+    60%, 100% { transform: rotate(90deg); }
+  }
+  #rotate-mask h2 { font-size: 18px; font-weight: 600; letter-spacing: 0.18em; margin: 0 0 8px; }
+  #rotate-mask p  { font-size: 12px; color: #6f96a8; letter-spacing: 0.08em; margin: 0; }
+
+  /* ---- 触屏按键层 ------------------------------------------------------ */
+  #touch-layer {
+    position: absolute; inset: 0;
+    display: none;
+    pointer-events: none;
+    z-index: 20;
+  }
+  #touch-layer.on { display: block; }
+
+  /* 摇杆热区 160px，可视底盘 120px */
+  #stick-zone {
+    position: absolute;
+    width: 160px; height: 160px;
+    left: calc(12px + env(safe-area-inset-left));
+    bottom: calc(10px + env(safe-area-inset-bottom));
+    pointer-events: auto;
+    touch-action: none;
+  }
+  #stick-base {
+    position: absolute; left: 20px; top: 20px;
+    width: 120px; height: 120px;
+    border-radius: 50%;
+    border: 2px solid rgba(111, 208, 255, 0.34);
+    background: radial-gradient(circle at 50% 50%, rgba(12, 32, 44, 0.62), rgba(6, 14, 20, 0.34));
+    box-shadow: inset 0 0 18px rgba(60, 160, 210, 0.20);
+  }
+  #stick-base::before,
+  #stick-base::after {
+    content: ""; position: absolute; background: rgba(111, 208, 255, 0.18);
+  }
+  #stick-base::before { left: 50%; top: 8%; width: 1px; height: 84%; }
+  #stick-base::after  { top: 50%; left: 8%; height: 1px; width: 84%; }
+  #stick-knob {
+    position: absolute; left: 50%; top: 50%;
+    width: 54px; height: 54px; margin: -27px 0 0 -27px;
+    border-radius: 50%;
+    border: 2px solid rgba(160, 235, 255, 0.7);
+    background: radial-gradient(circle at 40% 34%, rgba(150, 232, 255, 0.55), rgba(18, 62, 82, 0.85));
+    box-shadow: 0 0 12px rgba(110, 210, 255, 0.35);
+    transition: transform 0.06s linear;
+  }
+
+  #btn-cluster {
+    position: absolute;
+    right: calc(14px + env(safe-area-inset-right));
+    bottom: calc(12px + env(safe-area-inset-bottom));
+    width: 196px; height: 150px;
+    pointer-events: none;
+  }
+  .tbtn {
+    position: absolute;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 50%;
+    color: #dff6ff;
+    font-size: 13px; font-weight: 700; letter-spacing: 0.04em;
+    pointer-events: auto;
+    touch-action: none;
+    border: 2px solid rgba(120, 210, 255, 0.45);
+    background: radial-gradient(circle at 38% 32%, rgba(46, 96, 122, 0.86), rgba(8, 20, 28, 0.9));
+    box-shadow: 0 0 10px rgba(60, 150, 200, 0.25), inset 0 0 12px rgba(80, 190, 240, 0.18);
+  }
+  .tbtn.small { width: 76px; height: 76px; }
+  .tbtn.big   { width: 88px; height: 88px; }
+  .tbtn[data-act="light"]  { left: 0;    bottom: 8px; }
+  .tbtn[data-act="heavy"]  { left: 84px; bottom: 44px; }
+  .tbtn[data-act="special"]{ left: 122px; bottom: 0; border-color: rgba(255, 200, 107, 0.55); color: #ffe4ab; }
+  .tbtn.pressed { transform: scale(0.94); filter: brightness(1.45); }
+  .tbtn.ready { box-shadow: 0 0 16px rgba(255, 200, 107, 0.65), inset 0 0 14px rgba(255, 210, 120, 0.30); }
+  .tbtn .sub { position: absolute; bottom: 8px; font-size: 8px; font-weight: 400; color: rgba(220, 245, 255, 0.6); }
+
+  /* 自定义键位：进入编辑态后按键可拖动 */
+  #touch-layer.editing #stick-zone,
+  #touch-layer.editing .tbtn {
+    outline: 1px dashed rgba(255, 200, 107, 0.8);
+    outline-offset: 3px;
+  }
+  #touch-layer.editing #stick-zone { pointer-events: auto; }
 </style>
 </head>
 <body>
-  <div class="box">
-    <h1>环太平洋 · 机甲对决</h1>
-    <p>正在进入战场……若未自动跳转，请<a href="pacific-rim-fight/">点此开始</a></p>
+  <div id="stage-wrap">
+    <canvas id="game" width="480" height="270" aria-label="光之战士 像素对决"></canvas>
+
+    <!-- 触屏按键层：仅在战斗中显示，位置可在暂停菜单中拖动自定义 -->
+    <div id="touch-layer">
+      <div id="stick-zone">
+        <div id="stick-base"><div id="stick-knob"></div></div>
+      </div>
+      <div id="btn-cluster">
+        <button class="tbtn small" data-act="light" aria-label="轻击">A<span class="sub">轻</span></button>
+        <button class="tbtn small" data-act="heavy" aria-label="重击">B<span class="sub">重</span></button>
+        <button class="tbtn big" data-act="special" aria-label="必杀">C<span class="sub">必杀</span></button>
+      </div>
+    </div>
   </div>
-  <script>location.replace('pacific-rim-fight/');</script>
+
+  <button id="btn-fullscreen">全屏</button>
+
+  <div id="rotate-mask">
+    <div class="phone"></div>
+    <h2>请将手机横置</h2>
+    <p>横屏体验 60 帧对战</p>
+  </div>
+
+  <script type="module" src="./src/main.js"></script>
 </body>
 </html>
